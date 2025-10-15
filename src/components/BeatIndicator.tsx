@@ -1,26 +1,12 @@
-import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
 interface BeatIndicatorProps {
   isActive: boolean;
   totalBeats: number;
+  currentBeat: number;
 }
 
-const BeatIndicator = ({ isActive, totalBeats }: BeatIndicatorProps) => {
-  const [currentBeat, setCurrentBeat] = useState(0);
-
-  useEffect(() => {
-    if (!isActive) {
-      setCurrentBeat(0);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      setCurrentBeat((prev) => (prev + 1) % totalBeats);
-    }, 600); // Simulated tempo
-
-    return () => clearInterval(interval);
-  }, [isActive, totalBeats]);
+const BeatIndicator = ({ isActive, totalBeats, currentBeat }: BeatIndicatorProps) => {
 
   return (
     <div className="space-y-6">

@@ -1,37 +1,24 @@
-import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { PitchResult } from "@/lib/audioEngine";
 
 interface PitchMeterProps {
   isActive: boolean;
+  pitchData: PitchResult | null;
 }
 
-const PitchMeter = ({ isActive }: PitchMeterProps) => {
-  const [pitchDeviation, setPitchDeviation] = useState(0);
-  const [pitchState, setPitchState] = useState<"perfect" | "close" | "off">("perfect");
+const PitchMeter = ({ isActive, pitchData }: PitchMeterProps) => {
+  const pitchDeviation = pitchData?.cents || 0;
+  
+  const getPitchState = (): "perfect" | "close" | "off" => {
+    if (!isActive || !pitchData) return "perfect";
+    
+    const absCents = Math.abs(pitchDeviation);
+    if (absCents < 10) return "perfect";
+    if (absCents < 30) return "close";
+    return "off";
+  };
 
-  // Simulate pitch changes for demo
-  useEffect(() => {
-    if (!isActive) {
-      setPitchDeviation(0);
-      setPitchState("perfect");
-      return;
-    }
-
-    const interval = setInterval(() => {
-      const randomDeviation = (Math.random() - 0.5) * 100;
-      setPitchDeviation(randomDeviation);
-
-      if (Math.abs(randomDeviation) < 10) {
-        setPitchState("perfect");
-      } else if (Math.abs(randomDeviation) < 30) {
-        setPitchState("close");
-      } else {
-        setPitchState("off");
-      }
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [isActive]);
+  const pitchState = getPitchState();
 
   const getIndicatorColor = () => {
     switch (pitchState) {
@@ -106,19 +93,28 @@ const PitchMeter = ({ isActive }: PitchMeterProps) => {
 
       {/* Swara Reference */}
       <div className="flex justify-center gap-2 text-xs">
-        {["Sa", "Re", "Ga", "Ma", "Pa", "Dha", "Ni", "Sa'"].map((swara, i) => (
-          <div
-            key={i}
-            className={cn(
-              "px-3 py-1 rounded-full transition-all",
-              i === 2 && isActive && pitchState === "perfect"
-                ? "bg-success text-success-foreground font-semibold"
-                : "bg-muted text-muted-foreground"
-            )}
-          >
-            {swara}
-          </div>
-        ))}
+        {["Sa", "Re", "Ga", "Ma", "Pa", "Dha", "Ni", "Sa'"].map((swara, i) => {
+          const swaraName = swara.replace("'", "");
+          const isCurrentSwara = pitchData?.note === swaraName && isActive;
+          
+          return (
+            <div
+              key={i}
+              className={cn(
+                "px-3 py-1 rounded-full transition-all",
+                isCurrentSwara && pitchState === "perfect"
+                  ? "bg-success text-success-foreground font-semibold shadow-glow"
+                  : isCurrentSwara && pitchState === "close"
+                  ? "bg-warning text-warning-foreground font-semibold"
+                  : isCurrentSwara
+                  ? "bg-destructive/20 text-foreground font-semibold"
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              {swara}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

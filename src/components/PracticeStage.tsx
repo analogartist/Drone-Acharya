@@ -1,19 +1,133 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Play, Pause, Settings } from "lucide-react";
 import PitchMeter from "@/components/PitchMeter";
 import BeatIndicator from "@/components/BeatIndicator";
 import RagaSelector from "@/components/RagaSelector";
 import { Card } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { AudioEngine, TanpuraGenerator, TablaGenerator, PitchResult } from "@/lib/audioEngine";
 
 interface PracticeStageProps {
   onBack: () => void;
 }
 
 const PracticeStage = ({ onBack }: PracticeStageProps) => {
+  const { toast } = useToast();
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [selectedRaga, setSelectedRaga] = useState("Yaman");
   const [selectedTaal, setSelectedTaal] = useState("Teentaal");
+  const [pitchData, setPitchData] = useState<PitchResult | null>(null);
+  const [currentBeat, setCurrentBeat] = useState(0);
+  const [sessionTime, setSessionTime] = useState(0);
+  
+  const audioEngineRef = useRef<AudioEngine | null>(null);
+  const tanpuraRef = useRef<TanpuraGenerator | null>(null);
+  const tablaRef = useRef<TablaGenerator | null>(null);
+  const beatIntervalRef = useRef<number | null>(null);
+  const sessionTimerRef = useRef<number | null>(null);
+
+  // Initialize audio engines
+  useEffect(() => {
+    const initAudio = async () => {
+      try {
+        audioEngineRef.current = new AudioEngine();
+        await audioEngineRef.current.initialize();
+        
+        tanpuraRef.current = new TanpuraGenerator();
+        tanpuraRef.current.initialize();
+        
+        tablaRef.current = new TablaGenerator();
+        tablaRef.current.initialize();
+        
+        setIsInitialized(true);
+        
+        toast({
+          title: "Ready to practice",
+          description: "Microphone connected successfully",
+        });
+      } catch (error) {
+        console.error("Failed to initialize audio:", error);
+        toast({
+          title: "Audio Error",
+          description: error instanceof Error ? error.message : "Failed to access microphone",
+          variant: "destructive",
+        });
+      }
+    };
+
+    initAudio();
+
+    return () => {
+      audioEngineRef.current?.cleanup();
+      tanpuraRef.current?.cleanup();
+      tablaRef.current?.cleanup();
+      if (beatIntervalRef.current) clearInterval(beatIntervalRef.current);
+      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+    };
+  }, []);
+
+  // Handle practice start/stop
+  const togglePractice = () => {
+    if (!isInitialized) {
+      toast({
+        title: "Not Ready",
+        description: "Audio system is still initializing",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isPlaying) {
+      // Stop practice
+      audioEngineRef.current?.stopPitchDetection();
+      tanpuraRef.current?.stop();
+      if (beatIntervalRef.current) {
+        clearInterval(beatIntervalRef.current);
+        beatIntervalRef.current = null;
+      }
+      if (sessionTimerRef.current) {
+        clearInterval(sessionTimerRef.current);
+        sessionTimerRef.current = null;
+      }
+      setCurrentBeat(0);
+    } else {
+      // Start practice
+      audioEngineRef.current?.startPitchDetection((result) => {
+        setPitchData(result);
+      });
+      
+      tanpuraRef.current?.start(261.63); // Sa = C4
+      
+      // Start tabla beats
+      const totalBeats = selectedTaal === "Teentaal" ? 16 : 6;
+      const bpm = 80; // Beats per minute
+      const beatInterval = (60 / bpm) * 1000;
+      
+      let beat = 0;
+      beatIntervalRef.current = window.setInterval(() => {
+        const isSam = beat === 0;
+        tablaRef.current?.playBeat(isSam);
+        setCurrentBeat(beat);
+        beat = (beat + 1) % totalBeats;
+      }, beatInterval);
+
+      // Start session timer
+      sessionTimerRef.current = window.setInterval(() => {
+        setSessionTime(prev => prev + 1);
+      }, 1000);
+    }
+
+    setIsPlaying(!isPlaying);
+  };
+
+  // Format session time
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background">
@@ -70,7 +184,8 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
               <Button
                 size="lg"
                 className="w-full shadow-glow"
-                onClick={() => setIsPlaying(!isPlaying)}
+                onClick={togglePractice}
+                disabled={!isInitialized}
               >
                 {isPlaying ? (
                   <>
@@ -80,7 +195,7 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
                 ) : (
                   <>
                     <Play className="mr-2 w-5 h-5" />
-                    Start Practice
+                    {isInitialized ? "Start Practice" : "Initializing..."}
                   </>
                 )}
               </Button>
@@ -89,15 +204,19 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
             <div className="pt-4 space-y-2 text-sm text-muted-foreground">
               <div className="flex justify-between">
                 <span>Session Time</span>
-                <span className="font-mono">00:00</span>
+                <span className="font-mono">{formatTime(sessionTime)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Sur Accuracy</span>
-                <span className="font-mono text-success">--</span>
+                <span>Current Note</span>
+                <span className="font-mono text-primary">
+                  {pitchData?.note || "--"}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span>Taal Sync</span>
-                <span className="font-mono text-success">--</span>
+                <span>Frequency</span>
+                <span className="font-mono text-muted-foreground">
+                  {pitchData?.frequency ? `${pitchData.frequency.toFixed(1)} Hz` : "--"}
+                </span>
               </div>
             </div>
           </Card>
@@ -107,7 +226,10 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
             <div className="space-y-8">
               <div>
                 <h3 className="font-semibold mb-4 text-center">Pitch (Sur) Detection</h3>
-                <PitchMeter isActive={isPlaying} />
+                <PitchMeter 
+                  isActive={isPlaying} 
+                  pitchData={pitchData}
+                />
               </div>
 
               <div>
@@ -115,6 +237,7 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
                 <BeatIndicator 
                   isActive={isPlaying} 
                   totalBeats={selectedTaal === "Teentaal" ? 16 : 6}
+                  currentBeat={currentBeat}
                 />
               </div>
 
