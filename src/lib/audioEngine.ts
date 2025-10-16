@@ -1,4 +1,5 @@
 import { PitchDetector } from "pitchy";
+import * as Tone from "tone";
 
 export interface PitchResult {
   frequency: number;
@@ -150,105 +151,111 @@ export class AudioEngine {
   }
 }
 
-// Tanpura sound generator using Web Audio API
+// Tanpura sound generator using Tone.js
 export class TanpuraGenerator {
-  private audioContext: AudioContext | null = null;
-  private oscillators: OscillatorNode[] = [];
-  private gainNode: GainNode | null = null;
+  private synth: Tone.FMSynth | null = null;
+  private autoFilter: Tone.AutoFilter | null = null;
 
-  initialize(): void {
-    this.audioContext = new AudioContext();
-    this.gainNode = this.audioContext.createGain();
-    this.gainNode.gain.value = 0.15;
-    this.gainNode.connect(this.audioContext.destination);
+  async initialize(): Promise<void> {
+    await Tone.start();
+    
+    // Create a warm, resonant synth for tanpura
+    this.synth = new Tone.FMSynth({
+      harmonicity: 3,
+      modulationIndex: 10,
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.5, decay: 2, sustain: 0.8, release: 3 },
+      modulation: { type: "square" },
+      modulationEnvelope: { attack: 0.5, decay: 0, sustain: 1, release: 0.5 }
+    }).toDestination();
+    
+    // Add subtle vibrato for realism
+    this.autoFilter = new Tone.AutoFilter("0.5hz").connect(this.synth);
+    this.autoFilter.start();
+    
+    this.synth.volume.value = -20;
   }
 
   start(baseFrequency: number = 261.63): void {
-    if (!this.audioContext || !this.gainNode) return;
+    if (!this.synth) return;
 
-    // Stop existing oscillators
     this.stop();
 
-    // Single string tanpura - C3 (lower Sa)
-    const osc = this.audioContext.createOscillator();
-    osc.frequency.value = 130.81; // C3 frequency
-    osc.type = "sawtooth"; // Approximates tanpura timbre
-    
-    osc.connect(this.gainNode);
-    osc.start(this.audioContext.currentTime);
-    
-    this.oscillators.push(osc);
+    // C3 note (130.81 Hz)
+    this.synth.triggerAttack("C3");
 
-    console.log("Tanpura started at C3 (130.81 Hz)");
+    console.log("Tanpura started at C3 with Tone.js");
   }
 
   stop(): void {
-    this.oscillators.forEach(osc => {
-      try {
-        osc.stop();
-      } catch (e) {
-        // Oscillator might already be stopped
-      }
-    });
-    this.oscillators = [];
+    if (this.synth) {
+      this.synth.triggerRelease();
+    }
   }
 
   cleanup(): void {
     this.stop();
-    if (this.audioContext) {
-      this.audioContext.close();
-      this.audioContext = null;
+    if (this.synth) {
+      this.synth.dispose();
+      this.synth = null;
+    }
+    if (this.autoFilter) {
+      this.autoFilter.dispose();
+      this.autoFilter = null;
     }
   }
 }
 
-// Tabla beat generator
+// Tabla beat generator using Tone.js
 export class TablaGenerator {
-  private audioContext: AudioContext | null = null;
-  private gainNode: GainNode | null = null;
+  private membraneSynth: Tone.MembraneSynth | null = null;
+  private noiseSynth: Tone.NoiseSynth | null = null;
 
-  initialize(): void {
-    this.audioContext = new AudioContext();
-    this.gainNode = this.audioContext.createGain();
-    this.gainNode.gain.value = 0.3;
-    this.gainNode.connect(this.audioContext.destination);
+  async initialize(): Promise<void> {
+    await Tone.start();
+    
+    // Deep bass for tabla
+    this.membraneSynth = new Tone.MembraneSynth({
+      pitchDecay: 0.05,
+      octaves: 6,
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 }
+    }).toDestination();
+    
+    // High-frequency attack for tabla
+    this.noiseSynth = new Tone.NoiseSynth({
+      noise: { type: "white" },
+      envelope: { attack: 0.001, decay: 0.05, sustain: 0 }
+    }).toDestination();
+    
+    this.membraneSynth.volume.value = -10;
+    this.noiseSynth.volume.value = -25;
   }
 
   playBeat(isSam: boolean = false): void {
-    if (!this.audioContext || !this.gainNode) return;
+    if (!this.membraneSynth || !this.noiseSynth) return;
 
-    const now = this.audioContext.currentTime;
+    const now = Tone.now();
     
-    // Create oscillator for beat sound
-    const osc = this.audioContext.createOscillator();
-    const oscGain = this.audioContext.createGain();
-    
-    // Sam (first beat) is emphasized
     if (isSam) {
-      osc.frequency.value = 200; // Lower, deeper sound for sam
-      oscGain.gain.value = 0.8;
+      // Sam: deeper, emphasized beat
+      this.membraneSynth.triggerAttackRelease("C2", "16n", now);
+      this.noiseSynth.triggerAttackRelease("16n", now);
     } else {
-      osc.frequency.value = 300;
-      oscGain.gain.value = 0.5;
+      // Regular beat: lighter
+      this.membraneSynth.triggerAttackRelease("G2", "32n", now);
+      this.noiseSynth.triggerAttackRelease("32n", now, -35);
     }
-    
-    osc.type = "triangle";
-    
-    // Quick decay envelope
-    oscGain.gain.setValueAtTime(oscGain.gain.value, now);
-    oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-    
-    osc.connect(oscGain);
-    oscGain.connect(this.gainNode);
-    
-    osc.start(now);
-    osc.stop(now + 0.1);
   }
 
   cleanup(): void {
-    if (this.audioContext) {
-      this.audioContext.close();
-      this.audioContext = null;
+    if (this.membraneSynth) {
+      this.membraneSynth.dispose();
+      this.membraneSynth = null;
+    }
+    if (this.noiseSynth) {
+      this.noiseSynth.dispose();
+      this.noiseSynth = null;
     }
   }
 }

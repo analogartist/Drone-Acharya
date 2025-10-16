@@ -36,10 +36,10 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
         await audioEngineRef.current.initialize();
         
         tanpuraRef.current = new TanpuraGenerator();
-        tanpuraRef.current.initialize();
+        await tanpuraRef.current.initialize();
         
         tablaRef.current = new TablaGenerator();
-        tablaRef.current.initialize();
+        await tablaRef.current.initialize();
         
         setIsInitialized(true);
         
