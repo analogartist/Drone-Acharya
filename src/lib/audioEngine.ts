@@ -92,21 +92,36 @@ export class AudioEngine {
   }
 
   private analyzeFrequency(frequency: number): { cents: number; note: string } {
-    // Find closest swara
+    // Normalize frequency to base octave (C4-B4 range)
+    let normalizedFreq = frequency;
+    while (normalizedFreq > 523.25) normalizedFreq /= 2; // Above B4
+    while (normalizedFreq < 261.63) normalizedFreq *= 2; // Below C4
+    
+    // Find closest swara in normalized octave
     let closestSwara = "Sa";
     let minDiff = Infinity;
 
     for (const [swara, freq] of Object.entries(this.swaraFrequencies)) {
-      const diff = Math.abs(frequency - freq);
+      const diff = Math.abs(normalizedFreq - freq);
       if (diff < minDiff) {
         minDiff = diff;
         closestSwara = swara;
       }
     }
 
-    // Calculate cents deviation
+    // Calculate cents deviation using original frequency
     const targetFreq = this.swaraFrequencies[closestSwara as keyof typeof this.swaraFrequencies];
-    const cents = 1200 * Math.log2(frequency / targetFreq);
+    
+    // Find the closest octave of the target frequency to the actual frequency
+    let closestOctaveFreq = targetFreq;
+    while (Math.abs(frequency - closestOctaveFreq * 2) < Math.abs(frequency - closestOctaveFreq)) {
+      closestOctaveFreq *= 2;
+    }
+    while (Math.abs(frequency - closestOctaveFreq / 2) < Math.abs(frequency - closestOctaveFreq)) {
+      closestOctaveFreq /= 2;
+    }
+    
+    const cents = 1200 * Math.log2(frequency / closestOctaveFreq);
 
     return { cents, note: closestSwara };
   }
@@ -154,33 +169,17 @@ export class TanpuraGenerator {
     // Stop existing oscillators
     this.stop();
 
-    // Tanpura typically has 4 strings: Sa, Pa, Sa (lower), Sa (higher)
-    const frequencies = [
-      baseFrequency / 2,      // Lower Sa
-      baseFrequency,          // Middle Sa
-      baseFrequency * 1.5,    // Pa (perfect fifth)
-      baseFrequency * 2,      // Higher Sa
-    ];
+    // Single string tanpura - lower Sa
+    const osc = this.audioContext.createOscillator();
+    osc.frequency.value = baseFrequency / 2; // Lower Sa
+    osc.type = "sawtooth"; // Approximates tanpura timbre
+    
+    osc.connect(this.gainNode);
+    osc.start(this.audioContext.currentTime);
+    
+    this.oscillators.push(osc);
 
-    frequencies.forEach((freq, index) => {
-      const osc = this.audioContext!.createOscillator();
-      osc.frequency.value = freq;
-      osc.type = "sawtooth"; // Approximates tanpura timbre
-      
-      // Create individual gain for each string
-      const stringGain = this.audioContext!.createGain();
-      stringGain.gain.value = 1 / frequencies.length;
-      
-      osc.connect(stringGain);
-      stringGain.connect(this.gainNode!);
-      
-      // Start with slight delay for natural effect
-      osc.start(this.audioContext!.currentTime + index * 0.1);
-      
-      this.oscillators.push(osc);
-    });
-
-    console.log("Tanpura started");
+    console.log("Tanpura started (lower Sa)");
   }
 
   stop(): void {
