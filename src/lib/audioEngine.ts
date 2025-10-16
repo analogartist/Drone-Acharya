@@ -169,9 +169,9 @@ export class TanpuraGenerator {
     // Stop existing oscillators
     this.stop();
 
-    // Single string tanpura - lower Sa
+    // Single string tanpura - C3 (lower Sa)
     const osc = this.audioContext.createOscillator();
-    osc.frequency.value = baseFrequency / 2; // Lower Sa
+    osc.frequency.value = 130.81; // C3 frequency
     osc.type = "sawtooth"; // Approximates tanpura timbre
     
     osc.connect(this.gainNode);
@@ -179,7 +179,7 @@ export class TanpuraGenerator {
     
     this.oscillators.push(osc);
 
-    console.log("Tanpura started (lower Sa)");
+    console.log("Tanpura started at C3 (130.81 Hz)");
   }
 
   stop(): void {
