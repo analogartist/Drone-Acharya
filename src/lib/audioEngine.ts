@@ -32,9 +32,9 @@ export class AudioEngine {
       // Request microphone access
       this.micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
         },
       });
 
@@ -63,6 +63,11 @@ export class AudioEngine {
 
   startPitchDetection(callback: (result: PitchResult) => void): void {
     this.onPitchDetected = callback;
+
+    // Ensure audio context is running (required on some browsers)
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      this.audioContext.resume().catch((e) => console.warn('Failed to resume audio context', e));
+    }
     
     const detectPitch = () => {
       if (!this.analyserNode || !this.detector || !this.audioContext) return;
@@ -75,7 +80,7 @@ export class AudioEngine {
         this.audioContext.sampleRate
       );
 
-      if (frequency && clarity > 0.9) {
+      if (frequency && clarity > 0.7) {
         const { cents, note } = this.analyzeFrequency(frequency);
         
         this.onPitchDetected?.({
