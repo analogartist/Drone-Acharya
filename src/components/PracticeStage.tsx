@@ -4,6 +4,7 @@ import { ArrowLeft, Play, Pause, Settings } from "lucide-react";
 import PitchMeter from "@/components/PitchMeter";
 import BeatIndicator from "@/components/BeatIndicator";
 import RagaSelector from "@/components/RagaSelector";
+import AudioLevelMeter from "@/components/AudioLevelMeter";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { AudioEngine, TanpuraGenerator, TablaGenerator, PitchResult } from "@/lib/audioEngine";
@@ -21,6 +22,7 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
   const [pitchData, setPitchData] = useState<PitchResult | null>(null);
   const [currentBeat, setCurrentBeat] = useState(0);
   const [sessionTime, setSessionTime] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(0);
   
   const audioEngineRef = useRef<AudioEngine | null>(null);
   const tanpuraRef = useRef<TanpuraGenerator | null>(null);
@@ -97,6 +99,15 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
       audioEngineRef.current?.startPitchDetection((result) => {
         setPitchData(result);
       });
+      
+      // Update audio level continuously
+      const updateAudioLevel = () => {
+        if (audioEngineRef.current && isPlaying) {
+          setAudioLevel(audioEngineRef.current.getAudioLevel());
+          requestAnimationFrame(updateAudioLevel);
+        }
+      };
+      updateAudioLevel();
       
       tanpuraRef.current?.start(261.63); // Sa = C4
       
@@ -201,6 +212,11 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
               </Button>
             </div>
 
+            {/* Audio Level Meter */}
+            <div className="pt-4">
+              <AudioLevelMeter level={audioLevel} isActive={isPlaying} />
+            </div>
+
             <div className="pt-4 space-y-2 text-sm text-muted-foreground">
               <div className="flex justify-between">
                 <span>Session Time</span>
@@ -216,6 +232,12 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
                 <span>Frequency</span>
                 <span className="font-mono text-muted-foreground">
                   {pitchData?.frequency ? `${pitchData.frequency.toFixed(1)} Hz` : "--"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Clarity</span>
+                <span className="font-mono text-muted-foreground">
+                  {pitchData?.clarity ? `${(pitchData.clarity * 100).toFixed(0)}%` : "--"}
                 </span>
               </div>
             </div>

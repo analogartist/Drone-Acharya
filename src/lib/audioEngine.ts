@@ -15,6 +15,8 @@ export class AudioEngine {
   private detector: PitchDetector<Float32Array> | null = null;
   private animationFrameId: number | null = null;
   private onPitchDetected: ((result: PitchResult) => void) | null = null;
+  private currentAudioLevel: number = 0;
+  private debugMode: boolean = true; // Enable debug logging
 
   // Reference frequencies for swaras in Hz (Sa = C4)
   private readonly swaraFrequencies = {
@@ -41,18 +43,18 @@ export class AudioEngine {
       // Create audio context
       this.audioContext = new AudioContext({ sampleRate: 44100 });
       
-      // Create analyser
+      // Create analyser with optimized settings for vocal range
       this.analyserNode = this.audioContext.createAnalyser();
-      this.analyserNode.fftSize = 2048;
-      this.analyserNode.smoothingTimeConstant = 0.8;
+      this.analyserNode.fftSize = 4096; // Higher resolution for better low-frequency detection
+      this.analyserNode.smoothingTimeConstant = 0.5; // Faster response
 
       // Connect microphone to analyser
       const source = this.audioContext.createMediaStreamSource(this.micStream);
       source.connect(this.analyserNode);
 
-      // Initialize pitch detector
+      // Initialize pitch detector with relaxed volume threshold
       this.detector = PitchDetector.forFloat32Array(this.analyserNode.fftSize);
-      this.detector.minVolumeDecibels = -30;
+      this.detector.minVolumeDecibels = -50; // More sensitive to quieter singing
 
       console.log("Audio engine initialized successfully");
     } catch (error) {
@@ -75,13 +77,30 @@ export class AudioEngine {
       const buffer = new Float32Array(this.analyserNode.fftSize);
       this.analyserNode.getFloatTimeDomainData(buffer);
 
+      // Calculate audio level (RMS)
+      let sum = 0;
+      for (let i = 0; i < buffer.length; i++) {
+        sum += buffer[i] * buffer[i];
+      }
+      this.currentAudioLevel = Math.sqrt(sum / buffer.length);
+
       const [frequency, clarity] = this.detector.findPitch(
         buffer,
         this.audioContext.sampleRate
       );
 
-      if (frequency && clarity > 0.7) {
+      // Debug logging
+      if (this.debugMode && this.currentAudioLevel > 0.01) {
+        console.log(`Audio Level: ${(this.currentAudioLevel * 100).toFixed(2)}% | Frequency: ${frequency?.toFixed(1) || 'N/A'} Hz | Clarity: ${clarity?.toFixed(2) || 'N/A'}`);
+      }
+
+      // Relaxed clarity threshold for better detection
+      if (frequency && clarity > 0.5) {
         const { cents, note } = this.analyzeFrequency(frequency);
+        
+        if (this.debugMode) {
+          console.log(`Detected: ${note} | ${frequency.toFixed(1)} Hz | ${cents > 0 ? '+' : ''}${cents.toFixed(0)} cents`);
+        }
         
         this.onPitchDetected?.({
           frequency,
@@ -130,6 +149,14 @@ export class AudioEngine {
     const cents = 1200 * Math.log2(frequency / closestOctaveFreq);
 
     return { cents, note: closestSwara };
+  }
+
+  getAudioLevel(): number {
+    return this.currentAudioLevel;
+  }
+
+  setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
   }
 
   stopPitchDetection(): void {
