@@ -167,12 +167,14 @@ export class TanpuraGenerator {
       envelope: { attack: 0.5, decay: 2, sustain: 0.8, release: 3 },
       modulation: { type: "square" },
       modulationEnvelope: { attack: 0.5, decay: 0, sustain: 1, release: 0.5 }
-    }).toDestination();
+    });
     
     // Add subtle vibrato for realism
-    this.autoFilter = new Tone.AutoFilter("0.5hz").connect(this.synth);
+    this.autoFilter = new Tone.AutoFilter("0.5hz").toDestination();
     this.autoFilter.start();
     
+    // Connect synth through the filter
+    this.synth.connect(this.autoFilter);
     this.synth.volume.value = -20;
   }
 
