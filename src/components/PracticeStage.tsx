@@ -86,6 +86,10 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
       audioEngineRef.current?.stopPitchDetection();
       tanpuraRef.current?.stop();
       if (beatIntervalRef.current) {
+        // Stop audio level update
+        if ((beatIntervalRef.current as any).__stopAudioLevel) {
+          (beatIntervalRef.current as any).__stopAudioLevel();
+        }
         clearInterval(beatIntervalRef.current);
         beatIntervalRef.current = null;
       }
@@ -97,17 +101,35 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
     } else {
       // Start practice
       audioEngineRef.current?.startPitchDetection((result) => {
+        console.log("Pitch detected in UI:", result);
         setPitchData(result);
       });
       
-      // Update audio level continuously
+      // Update audio level continuously - use a flag instead of state
+      let shouldContinue = true;
       const updateAudioLevel = () => {
-        if (audioEngineRef.current && isPlaying) {
-          setAudioLevel(audioEngineRef.current.getAudioLevel());
+        if (audioEngineRef.current && shouldContinue) {
+          const level = audioEngineRef.current.getAudioLevel();
+          setAudioLevel(level);
+          console.log("Current audio level:", (level * 100).toFixed(2) + "%");
           requestAnimationFrame(updateAudioLevel);
         }
       };
       updateAudioLevel();
+      
+      // Store cleanup function
+      const stopAudioLevelUpdate = () => {
+        shouldContinue = false;
+      };
+      
+      // Make sure to stop the update loop when practice stops
+      if (beatIntervalRef.current) {
+        clearInterval(beatIntervalRef.current);
+      }
+      beatIntervalRef.current = window.setInterval(() => {
+        // Will be overwritten below, this is just for cleanup
+      }, 0) as any;
+      (beatIntervalRef.current as any).__stopAudioLevel = stopAudioLevelUpdate;
       
       tanpuraRef.current?.start(261.63); // Sa = C4
       

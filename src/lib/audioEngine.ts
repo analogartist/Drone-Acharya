@@ -89,9 +89,9 @@ export class AudioEngine {
         this.audioContext.sampleRate
       );
 
-      // Debug logging
-      if (this.debugMode && this.currentAudioLevel > 0.01) {
-        console.log(`Audio Level: ${(this.currentAudioLevel * 100).toFixed(2)}% | Frequency: ${frequency?.toFixed(1) || 'N/A'} Hz | Clarity: ${clarity?.toFixed(2) || 'N/A'}`);
+      // Always log if audio level is detectable
+      if (this.currentAudioLevel > 0.001) {
+        console.log(`[AudioEngine] Level: ${(this.currentAudioLevel * 100).toFixed(2)}% | Freq: ${frequency?.toFixed(1) || 'N/A'} Hz | Clarity: ${clarity?.toFixed(2) || 'N/A'}`);
       }
 
       // Relaxed clarity threshold for better detection
