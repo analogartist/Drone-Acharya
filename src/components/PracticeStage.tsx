@@ -8,6 +8,7 @@ import AudioLevelMeter from "@/components/AudioLevelMeter";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { AudioEngine, TanpuraGenerator, TablaGenerator, PitchResult } from "@/lib/audioEngine";
+import * as Tone from "tone";
 
 interface PracticeStageProps {
   onBack: () => void;
@@ -29,6 +30,7 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
   const tablaRef = useRef<TablaGenerator | null>(null);
   const beatIntervalRef = useRef<number | null>(null);
   const sessionTimerRef = useRef<number | null>(null);
+  const audioLevelAnimationRef = useRef<number | null>(null);
 
   // Initialize audio engines
   useEffect(() => {
@@ -85,71 +87,78 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
       // Stop practice
       audioEngineRef.current?.stopPitchDetection();
       tanpuraRef.current?.stop();
+      
+      if (audioLevelAnimationRef.current) {
+        cancelAnimationFrame(audioLevelAnimationRef.current);
+        audioLevelAnimationRef.current = null;
+      }
+      
       if (beatIntervalRef.current) {
-        // Stop audio level update
-        if ((beatIntervalRef.current as any).__stopAudioLevel) {
-          (beatIntervalRef.current as any).__stopAudioLevel();
-        }
         clearInterval(beatIntervalRef.current);
         beatIntervalRef.current = null;
       }
+      
       if (sessionTimerRef.current) {
         clearInterval(sessionTimerRef.current);
         sessionTimerRef.current = null;
       }
       setCurrentBeat(0);
     } else {
-      // Start practice
-      audioEngineRef.current?.startPitchDetection((result) => {
-        console.log("Pitch detected in UI:", result);
-        setPitchData(result);
-      });
-      
-      // Update audio level continuously - use a flag instead of state
-      let shouldContinue = true;
-      const updateAudioLevel = () => {
-        if (audioEngineRef.current && shouldContinue) {
-          const level = audioEngineRef.current.getAudioLevel();
-          setAudioLevel(level);
-          console.log("Current audio level:", (level * 100).toFixed(2) + "%");
-          requestAnimationFrame(updateAudioLevel);
+      // Start practice - ensure Tone.js is started first
+      const startPractice = async () => {
+        try {
+          // Ensure Tone.js audio context is running
+          await Tone.start();
+          console.log("Tone.js audio context started");
+          
+          audioEngineRef.current?.startPitchDetection((result) => {
+            console.log("Pitch detected in UI:", result);
+            setPitchData(result);
+          });
+          
+          // Update audio level continuously
+          const updateAudioLevel = () => {
+            if (audioEngineRef.current && audioLevelAnimationRef.current !== null) {
+              const level = audioEngineRef.current.getAudioLevel();
+              setAudioLevel(level);
+              audioLevelAnimationRef.current = requestAnimationFrame(updateAudioLevel);
+            }
+          };
+          audioLevelAnimationRef.current = requestAnimationFrame(updateAudioLevel);
+          
+          tanpuraRef.current?.start(261.63); // Sa = C4
+          console.log("Tanpura started");
+          
+          // Start tabla beats
+          const totalBeats = selectedTaal === "Teentaal" ? 16 : 6;
+          const bpm = 80; // Beats per minute
+          const beatInterval = (60 / bpm) * 1000;
+          
+          let beat = 0;
+          beatIntervalRef.current = window.setInterval(() => {
+            const isSam = beat === 0;
+            tablaRef.current?.playBeat(isSam);
+            console.log(`Tabla beat ${beat}${isSam ? ' (Sam)' : ''}`);
+            setCurrentBeat(beat);
+            beat = (beat + 1) % totalBeats;
+          }, beatInterval);
+
+          // Start session timer
+          sessionTimerRef.current = window.setInterval(() => {
+            setSessionTime(prev => prev + 1);
+          }, 1000);
+        } catch (error) {
+          console.error("Failed to start practice:", error);
+          toast({
+            title: "Audio Error",
+            description: "Failed to start audio playback",
+            variant: "destructive",
+          });
+          return;
         }
       };
-      updateAudioLevel();
       
-      // Store cleanup function
-      const stopAudioLevelUpdate = () => {
-        shouldContinue = false;
-      };
-      
-      // Make sure to stop the update loop when practice stops
-      if (beatIntervalRef.current) {
-        clearInterval(beatIntervalRef.current);
-      }
-      beatIntervalRef.current = window.setInterval(() => {
-        // Will be overwritten below, this is just for cleanup
-      }, 0) as any;
-      (beatIntervalRef.current as any).__stopAudioLevel = stopAudioLevelUpdate;
-      
-      tanpuraRef.current?.start(261.63); // Sa = C4
-      
-      // Start tabla beats
-      const totalBeats = selectedTaal === "Teentaal" ? 16 : 6;
-      const bpm = 80; // Beats per minute
-      const beatInterval = (60 / bpm) * 1000;
-      
-      let beat = 0;
-      beatIntervalRef.current = window.setInterval(() => {
-        const isSam = beat === 0;
-        tablaRef.current?.playBeat(isSam);
-        setCurrentBeat(beat);
-        beat = (beat + 1) % totalBeats;
-      }, beatInterval);
-
-      // Start session timer
-      sessionTimerRef.current = window.setInterval(() => {
-        setSessionTime(prev => prev + 1);
-      }, 1000);
+      startPractice();
     }
 
     setIsPlaying(!isPlaying);
