@@ -1,16 +1,21 @@
 import { cn } from "@/lib/utils";
 import { PitchResult } from "@/lib/audioEngine";
+import { ragaDefinitions, formatSwaraWithOctave } from "@/lib/ragaSystem";
 
 interface PitchMeterProps {
   isActive: boolean;
   pitchData: PitchResult | null;
+  currentRaga: string;
 }
 
-const PitchMeter = ({ isActive, pitchData }: PitchMeterProps) => {
+const PitchMeter = ({ isActive, pitchData, currentRaga }: PitchMeterProps) => {
   const pitchDeviation = pitchData?.cents || 0;
   
-  const getPitchState = (): "perfect" | "close" | "off" => {
+  const getPitchState = (): "perfect" | "close" | "off" | "outOfRaga" => {
     if (!isActive || !pitchData) return "perfect";
+    
+    // Check if note is in raga first
+    if (!pitchData.isInRaga) return "outOfRaga";
     
     const absCents = Math.abs(pitchDeviation);
     if (absCents < 10) return "perfect";
@@ -28,6 +33,8 @@ const PitchMeter = ({ isActive, pitchData }: PitchMeterProps) => {
         return "bg-warning";
       case "off":
         return "bg-destructive";
+      case "outOfRaga":
+        return "bg-muted-foreground/50";
       default:
         return "bg-muted";
     }
@@ -71,13 +78,14 @@ const PitchMeter = ({ isActive, pitchData }: PitchMeterProps) => {
       </div>
 
       {/* Status Text */}
-      <div className="text-center">
+      <div className="text-center space-y-1">
         <p
           className={cn(
             "text-sm font-medium transition-colors",
             pitchState === "perfect" && "text-success",
             pitchState === "close" && "text-warning",
             pitchState === "off" && "text-destructive",
+            pitchState === "outOfRaga" && "text-muted-foreground",
             !isActive && "text-muted-foreground"
           )}
         >
@@ -86,16 +94,24 @@ const PitchMeter = ({ isActive, pitchData }: PitchMeterProps) => {
               ? "Perfect Sur! 🎯"
               : pitchState === "close"
               ? "Almost there..."
+              : pitchState === "outOfRaga"
+              ? "Not in this raga"
               : "Adjust your pitch"
             : "Ready to practice"}
         </p>
+        {isActive && pitchData && (
+          <p className="text-xs text-muted-foreground">
+            {formatSwaraWithOctave(pitchData.note, pitchData.octave)} 
+            {" • "}
+            {pitchData.octave === -1 ? "Mandra" : pitchData.octave === 1 ? "Taar" : "Madhya"} Saptak
+          </p>
+        )}
       </div>
 
-      {/* Swara Reference */}
-      <div className="flex justify-center gap-2 text-xs">
-        {["Sa", "Re", "Ga", "Ma", "Pa", "Dha", "Ni", "Sa'"].map((swara, i) => {
-          const swaraName = swara.replace("'", "");
-          const isCurrentSwara = pitchData?.note === swaraName && isActive;
+      {/* Swara Reference - Show only swaras in current raga */}
+      <div className="flex justify-center gap-2 text-xs flex-wrap">
+        {ragaDefinitions[currentRaga]?.swaras.map((swara, i) => {
+          const isCurrentSwara = pitchData?.note === swara && isActive && pitchData.octave === 0;
           
           return (
             <div
@@ -106,6 +122,8 @@ const PitchMeter = ({ isActive, pitchData }: PitchMeterProps) => {
                   ? "bg-success text-success-foreground font-semibold shadow-glow"
                   : isCurrentSwara && pitchState === "close"
                   ? "bg-warning text-warning-foreground font-semibold"
+                  : isCurrentSwara && pitchState === "outOfRaga"
+                  ? "bg-muted text-muted-foreground font-semibold"
                   : isCurrentSwara
                   ? "bg-destructive/20 text-foreground font-semibold"
                   : "bg-muted text-muted-foreground"

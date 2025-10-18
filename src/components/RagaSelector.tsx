@@ -12,10 +12,10 @@ interface RagaSelectorProps {
 }
 
 const ragas = [
-  { name: "Yaman", swaras: "Sa Re Ga Ma Pa Dha Ni Sa" },
-  { name: "Bhupali", swaras: "Sa Re Ga Pa Dha Sa" },
-  { name: "Bhairav", swaras: "Sa re Ga ma Pa dha Ni Sa" },
-  { name: "Kafi", swaras: "Sa Re ga Ma Pa Dha ni Sa" },
+  { name: "Yaman", swaras: "Sa Re Ga ma Pa Dha Ni Sa" }, // Tivra Ma
+  { name: "Bhupali", swaras: "Sa Re Ga Pa Dha Sa" }, // Pentatonic
+  { name: "Bhairav", swaras: "Sa re Ga Ma Pa dha Ni Sa" }, // Komal Re, Komal Dha
+  { name: "Kafi", swaras: "Sa Re ga Ma Pa Dha ni Sa" }, // Komal Ga, Komal Ni
 ];
 
 const RagaSelector = ({ value, onChange }: RagaSelectorProps) => {

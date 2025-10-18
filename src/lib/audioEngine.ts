@@ -1,11 +1,18 @@
 import { PitchDetector } from "pitchy";
 import * as Tone from "tone";
+import {
+  getRagaSwaraFrequencies,
+  isSwaraInRaga,
+  swaraRatios,
+} from "./ragaSystem";
 
 export interface PitchResult {
   frequency: number;
   clarity: number;
   cents: number;
   note: string;
+  octave: number; // -1 (mandra), 0 (madhya), 1 (taar)
+  isInRaga: boolean; // whether detected note is valid in current raga
 }
 
 export class AudioEngine {
@@ -18,16 +25,11 @@ export class AudioEngine {
   private currentAudioLevel: number = 0;
   private debugMode: boolean = true; // Enable debug logging
 
-  // Reference frequencies for swaras in Hz (Sa = C4)
-  private readonly swaraFrequencies = {
-    Sa: 261.63,  // C
-    Re: 293.66,  // D
-    Ga: 329.63,  // E
-    Ma: 349.23,  // F
-    Pa: 392.00,  // G
-    Dha: 440.00, // A
-    Ni: 493.88,  // B
-  };
+  // Dynamic swara frequencies based on current raga
+  private baseFrequency: number = 130.81; // C3 (tanpura reference)
+  private currentRaga: string = "Yaman";
+  private swaraFrequencies: Record<string, number> = {};
+  private validSwarasInRaga: string[] = [];
 
   async initialize(): Promise<void> {
     try {
@@ -56,11 +58,23 @@ export class AudioEngine {
       this.detector = PitchDetector.forFloat32Array(this.analyserNode.fftSize);
       this.detector.minVolumeDecibels = -50; // More sensitive to quieter singing
 
+      // Initialize with default raga
+      this.setRaga("Yaman");
+
       console.log("Audio engine initialized successfully");
     } catch (error) {
       console.error("Failed to initialize audio engine:", error);
       throw new Error("Microphone access denied or unavailable");
     }
+  }
+
+  setRaga(ragaName: string): void {
+    this.currentRaga = ragaName;
+    this.swaraFrequencies = getRagaSwaraFrequencies(ragaName, this.baseFrequency);
+    this.validSwarasInRaga = Object.keys(this.swaraFrequencies);
+    
+    console.log(`[AudioEngine] Raga set to ${ragaName}`);
+    console.log(`[AudioEngine] Swara frequencies:`, this.swaraFrequencies);
   }
 
   startPitchDetection(callback: (result: PitchResult) => void): void {
@@ -96,10 +110,11 @@ export class AudioEngine {
 
       // Relaxed clarity threshold for better detection
       if (frequency && clarity > 0.5) {
-        const { cents, note } = this.analyzeFrequency(frequency);
+        const { cents, note, octave, isInRaga } = this.analyzeFrequency(frequency);
         
         if (this.debugMode) {
-          console.log(`Detected: ${note} | ${frequency.toFixed(1)} Hz | ${cents > 0 ? '+' : ''}${cents.toFixed(0)} cents`);
+          const octaveSymbol = octave === -1 ? "." : octave === 1 ? "'" : "";
+          console.log(`Detected: ${note}${octaveSymbol} | ${frequency.toFixed(1)} Hz | ${cents > 0 ? '+' : ''}${cents.toFixed(0)} cents | ${isInRaga ? 'In Raga' : 'Out of Raga'}`);
         }
         
         this.onPitchDetected?.({
@@ -107,6 +122,8 @@ export class AudioEngine {
           clarity,
           cents,
           note,
+          octave,
+          isInRaga,
         });
       }
 
@@ -116,39 +133,68 @@ export class AudioEngine {
     detectPitch();
   }
 
-  private analyzeFrequency(frequency: number): { cents: number; note: string } {
-    // Normalize frequency to base octave (C4-B4 range)
-    let normalizedFreq = frequency;
-    while (normalizedFreq > 523.25) normalizedFreq /= 2; // Above B4
-    while (normalizedFreq < 261.63) normalizedFreq *= 2; // Below C4
+  private analyzeFrequency(frequency: number): { 
+    cents: number; 
+    note: string; 
+    octave: number; 
+    isInRaga: boolean;
+  } {
+    // Determine which octave the frequency belongs to
+    // baseFrequency is C3 (130.81 Hz), madhya saptak is centered around it
+    // Mandra: < baseFreq * 1.5 (< ~196 Hz)
+    // Madhya: baseFreq * 1.5 to baseFreq * 3 (~196-393 Hz)
+    // Taar: > baseFreq * 3 (> ~393 Hz)
     
-    // Find closest swara in normalized octave
+    let octave = 0;
+    let searchFreq = frequency;
+    
+    // Normalize to base octave range
+    if (frequency < this.baseFrequency * 1.5) {
+      octave = -1; // Mandra saptak
+      // Normalize up to madhya range for comparison
+      while (searchFreq < this.baseFrequency) {
+        searchFreq *= 2;
+      }
+    } else if (frequency > this.baseFrequency * 3) {
+      octave = 1; // Taar saptak
+      // Normalize down to madhya range for comparison
+      while (searchFreq > this.baseFrequency * 2) {
+        searchFreq /= 2;
+      }
+    } else {
+      octave = 0; // Madhya saptak
+    }
+    
+    // Find closest swara in current raga
     let closestSwara = "Sa";
     let minDiff = Infinity;
 
-    for (const [swara, freq] of Object.entries(this.swaraFrequencies)) {
-      const diff = Math.abs(normalizedFreq - freq);
+    for (const [swara, baseFreq] of Object.entries(this.swaraFrequencies)) {
+      const diff = Math.abs(searchFreq - baseFreq);
       if (diff < minDiff) {
         minDiff = diff;
         closestSwara = swara;
       }
     }
 
-    // Calculate cents deviation using original frequency
-    const targetFreq = this.swaraFrequencies[closestSwara as keyof typeof this.swaraFrequencies];
+    // Get the target frequency in the correct octave
+    const baseSwaraFreq = this.swaraFrequencies[closestSwara];
+    let targetFreq = baseSwaraFreq;
     
-    // Find the closest octave of the target frequency to the actual frequency
-    let closestOctaveFreq = targetFreq;
-    while (Math.abs(frequency - closestOctaveFreq * 2) < Math.abs(frequency - closestOctaveFreq)) {
-      closestOctaveFreq *= 2;
-    }
-    while (Math.abs(frequency - closestOctaveFreq / 2) < Math.abs(frequency - closestOctaveFreq)) {
-      closestOctaveFreq /= 2;
+    // Adjust target frequency to match detected octave
+    if (octave === -1) {
+      targetFreq = baseSwaraFreq / 2;
+    } else if (octave === 1) {
+      targetFreq = baseSwaraFreq * 2;
     }
     
-    const cents = 1200 * Math.log2(frequency / closestOctaveFreq);
+    // Calculate cents deviation from target frequency
+    const cents = 1200 * Math.log2(frequency / targetFreq);
+    
+    // Check if swara is valid in current raga
+    const isInRaga = isSwaraInRaga(closestSwara, this.currentRaga);
 
-    return { cents, note: closestSwara };
+    return { cents, note: closestSwara, octave, isInRaga };
   }
 
   getAudioLevel(): number {
@@ -210,15 +256,23 @@ export class TanpuraGenerator {
     this.synth.volume.value = -20;
   }
 
-  start(baseFrequency: number = 261.63): void {
+  start(baseFrequency: number = 130.81): void {
     if (!this.synth) return;
 
     this.stop();
 
-    // C3 note (130.81 Hz)
-    this.synth.triggerAttack("C3");
+    // Convert frequency to note name
+    const noteName = Tone.Frequency(baseFrequency, "hz").toNote();
+    this.synth.triggerAttack(noteName);
 
-    console.log("Tanpura started at C3 with Tone.js");
+    console.log(`[Tanpura] Started at ${noteName} (${baseFrequency.toFixed(2)} Hz)`);
+  }
+
+  setPitch(baseFrequency: number): void {
+    if (this.synth) {
+      this.synth.frequency.rampTo(baseFrequency, 0.5);
+      console.log(`[Tanpura] Pitch changed to ${baseFrequency.toFixed(2)} Hz`);
+    }
   }
 
   stop(): void {

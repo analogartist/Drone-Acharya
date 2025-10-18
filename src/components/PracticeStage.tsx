@@ -36,8 +36,10 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
   useEffect(() => {
     const initAudio = async () => {
       try {
-        audioEngineRef.current = new AudioEngine();
-        await audioEngineRef.current.initialize();
+      audioEngineRef.current = new AudioEngine();
+      await audioEngineRef.current.initialize();
+      // Set initial raga
+      audioEngineRef.current.setRaga(selectedRaga);
         
         tanpuraRef.current = new TanpuraGenerator();
         await tanpuraRef.current.initialize();
@@ -70,7 +72,21 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
       if (beatIntervalRef.current) clearInterval(beatIntervalRef.current);
       if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
     };
-  }, []);
+  }, [selectedRaga]);
+
+  const handleRagaChange = (raga: string) => {
+    setSelectedRaga(raga);
+    
+    // Update audio engine with new raga
+    if (audioEngineRef.current) {
+      audioEngineRef.current.setRaga(raga);
+    }
+    
+    toast({
+      title: `Switched to Raga ${raga}`,
+      description: `Pitch detection updated for ${raga} swaras`,
+    });
+  };
 
   // Handle practice start/stop
   const togglePractice = () => {
@@ -126,7 +142,7 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
           };
           audioLevelAnimationRef.current = requestAnimationFrame(updateAudioLevel);
           
-          tanpuraRef.current?.start(261.63); // Sa = C4
+          tanpuraRef.current?.start(130.81); // Sa = C3 (base frequency)
           console.log("Tanpura started");
           
           // Start tabla beats
@@ -199,7 +215,7 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
           <Card className="lg:col-span-1 p-6 space-y-6 shadow-soft">
             <div>
               <h3 className="font-semibold mb-4">Raga Selection</h3>
-              <RagaSelector value={selectedRaga} onChange={setSelectedRaga} />
+              <RagaSelector value={selectedRaga} onChange={handleRagaChange} />
             </div>
 
             <div>
@@ -282,6 +298,7 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
                 <PitchMeter 
                   isActive={isPlaying} 
                   pitchData={pitchData}
+                  currentRaga={selectedRaga}
                 />
               </div>
 
