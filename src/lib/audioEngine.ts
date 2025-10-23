@@ -25,6 +25,18 @@ export class AudioEngine {
   private currentAudioLevel: number = 0;
   private debugMode: boolean = true; // Enable debug logging
 
+  // Constants for valid vocal frequency range
+  private readonly MIN_VOCAL_FREQUENCY = 60; // Hz (below C2)
+  private readonly MAX_VOCAL_FREQUENCY = 1200; // Hz (above D#6)
+  private readonly MIN_CLARITY = 0.7; // Stricter clarity threshold
+  private readonly MIN_AUDIO_LEVEL = 0.005; // 0.5% minimum audio level
+  private readonly FREQUENCY_TOLERANCE = 0.08; // ±8% tolerance for swara matching
+  
+  // Frequency stability tracking
+  private recentFrequencies: number[] = [];
+  private readonly STABILITY_WINDOW = 5;
+  private readonly STABILITY_THRESHOLD = 20; // Hz
+
   // Dynamic swara frequencies based on current raga
   private baseFrequency: number = 130.81; // C3 (tanpura reference)
   private currentRaga: string = "Yaman";
@@ -108,22 +120,69 @@ export class AudioEngine {
         console.log(`[AudioEngine] Level: ${(this.currentAudioLevel * 100).toFixed(2)}% | Freq: ${frequency?.toFixed(1) || 'N/A'} Hz | Clarity: ${clarity?.toFixed(2) || 'N/A'}`);
       }
 
-      // Relaxed clarity threshold for better detection
-      if (frequency && clarity > 0.5) {
-        const { cents, note, octave, isInRaga } = this.analyzeFrequency(frequency);
-        
+      // Filter out invalid frequencies and low quality detections
+      if (!frequency) {
+        return;
+      }
+
+      // Check audio level threshold
+      if (this.currentAudioLevel < this.MIN_AUDIO_LEVEL) {
         if (this.debugMode) {
-          const octaveSymbol = octave === -1 ? "." : octave === 1 ? "'" : "";
-          console.log(`Detected: ${note}${octaveSymbol} | ${frequency.toFixed(1)} Hz | ${cents > 0 ? '+' : ''}${cents.toFixed(0)} cents | ${isInRaga ? 'In Raga' : 'Out of Raga'}`);
+          console.log(`[AudioEngine] Rejected: Audio level too low (${(this.currentAudioLevel * 100).toFixed(2)}%)`);
+        }
+        this.animationFrameId = requestAnimationFrame(detectPitch);
+        return;
+      }
+
+      // Check clarity threshold
+      if (clarity < this.MIN_CLARITY) {
+        if (this.debugMode) {
+          console.log(`[AudioEngine] Rejected: Low clarity (${clarity.toFixed(2)})`);
+        }
+        this.animationFrameId = requestAnimationFrame(detectPitch);
+        return;
+      }
+
+      // Check frequency range
+      if (frequency < this.MIN_VOCAL_FREQUENCY || frequency > this.MAX_VOCAL_FREQUENCY) {
+        if (this.debugMode) {
+          console.log(`[AudioEngine] Rejected: Out of vocal range (${frequency.toFixed(1)} Hz)`);
+        }
+        this.animationFrameId = requestAnimationFrame(detectPitch);
+        return;
+      }
+
+      // Frequency stability check
+      this.recentFrequencies.push(frequency);
+      if (this.recentFrequencies.length > this.STABILITY_WINDOW) {
+        this.recentFrequencies.shift();
+      }
+
+      if (this.recentFrequencies.length >= 3) {
+        const avg = this.recentFrequencies.reduce((a, b) => a + b, 0) / this.recentFrequencies.length;
+        const deviation = Math.abs(frequency - avg);
+        
+        if (deviation > this.STABILITY_THRESHOLD) {
+          if (this.debugMode) {
+            console.log(`[AudioEngine] Rejected: Unstable frequency (deviation: ${deviation.toFixed(1)} Hz)`);
+          }
+          this.animationFrameId = requestAnimationFrame(detectPitch);
+          return;
+        }
+      }
+
+      const result = this.analyzeFrequency(frequency);
+      
+      if (result) {
+        if (this.debugMode) {
+          const octaveSymbol = result.octave === -1 ? "." : result.octave === 1 ? "'" : result.octave === 2 ? "''" : "";
+          console.log(`Detected: ${result.note}${octaveSymbol} | ${frequency.toFixed(1)} Hz | ${result.cents > 0 ? '+' : ''}${result.cents.toFixed(0)} cents | ${result.isInRaga ? 'In Raga' : 'Out of Raga'}`);
         }
         
         this.onPitchDetected?.({
           frequency,
           clarity,
-          cents,
-          note,
-          octave,
-          isInRaga,
+          ...result,
         });
       }
 
@@ -138,55 +197,49 @@ export class AudioEngine {
     note: string; 
     octave: number; 
     isInRaga: boolean;
-  } {
-    // Determine which octave the frequency belongs to
-    // baseFrequency is C3 (130.81 Hz), madhya saptak is centered around it
-    // Mandra: < baseFreq * 1.5 (< ~196 Hz)
-    // Madhya: baseFreq * 1.5 to baseFreq * 3 (~196-393 Hz)
-    // Taar: > baseFreq * 3 (> ~393 Hz)
+  } | null {
+    // Determine octave using proper boundaries
+    // C2 = 65.4 Hz, C3 = 130.8 Hz, C4 = 261.6 Hz, C5 = 523.2 Hz
+    let octave: number;
     
-    let octave = 0;
-    let searchFreq = frequency;
-    
-    // Normalize to base octave range
-    if (frequency < this.baseFrequency * 1.5) {
-      octave = -1; // Mandra saptak
-      // Normalize up to madhya range for comparison
-      while (searchFreq < this.baseFrequency) {
-        searchFreq *= 2;
-      }
-    } else if (frequency > this.baseFrequency * 3) {
-      octave = 1; // Taar saptak
-      // Normalize down to madhya range for comparison
-      while (searchFreq > this.baseFrequency * 2) {
-        searchFreq /= 2;
-      }
+    if (frequency < this.baseFrequency) {
+      octave = -1; // Mandra saptak (C2-C3)
+    } else if (frequency < this.baseFrequency * 2) {
+      octave = 0; // Madhya saptak (C3-C4)
+    } else if (frequency < this.baseFrequency * 4) {
+      octave = 1; // Taar saptak (C4-C5)
     } else {
-      octave = 0; // Madhya saptak
+      octave = 2; // Taar+ saptak (C5+)
     }
     
-    // Find closest swara in current raga
-    let closestSwara = "Sa";
-    let minDiff = Infinity;
+    // Normalize frequency to madhya saptak (base octave) for comparison
+    const octaveShift = Math.floor(Math.log2(frequency / this.baseFrequency));
+    const searchFreq = frequency / Math.pow(2, octaveShift);
+    
+    // Find closest swara with tolerance check
+    let closestSwara: string | null = null;
+    let minPercentDiff = Infinity;
 
     for (const [swara, baseFreq] of Object.entries(this.swaraFrequencies)) {
-      const diff = Math.abs(searchFreq - baseFreq);
-      if (diff < minDiff) {
-        minDiff = diff;
+      const percentDiff = Math.abs(searchFreq - baseFreq) / baseFreq;
+      
+      if (percentDiff < minPercentDiff) {
+        minPercentDiff = percentDiff;
         closestSwara = swara;
       }
     }
 
+    // Reject if no swara found within tolerance
+    if (!closestSwara || minPercentDiff > this.FREQUENCY_TOLERANCE) {
+      if (this.debugMode) {
+        console.log(`[AudioEngine] Rejected: No swara match within tolerance (${(minPercentDiff * 100).toFixed(1)}% diff)`);
+      }
+      return null;
+    }
+
     // Get the target frequency in the correct octave
     const baseSwaraFreq = this.swaraFrequencies[closestSwara];
-    let targetFreq = baseSwaraFreq;
-    
-    // Adjust target frequency to match detected octave
-    if (octave === -1) {
-      targetFreq = baseSwaraFreq / 2;
-    } else if (octave === 1) {
-      targetFreq = baseSwaraFreq * 2;
-    }
+    const targetFreq = baseSwaraFreq * Math.pow(2, octaveShift);
     
     // Calculate cents deviation from target frequency
     const cents = 1200 * Math.log2(frequency / targetFreq);
