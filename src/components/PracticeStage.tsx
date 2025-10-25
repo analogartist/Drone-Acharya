@@ -4,10 +4,12 @@ import { ArrowLeft, Play, Pause, Settings } from "lucide-react";
 import PitchMeter from "@/components/PitchMeter";
 import BeatIndicator from "@/components/BeatIndicator";
 import RagaSelector from "@/components/RagaSelector";
+import NoteSelector from "@/components/NoteSelector";
 import AudioLevelMeter from "@/components/AudioLevelMeter";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { AudioEngine, TanpuraGenerator, TablaGenerator, PitchResult } from "@/lib/audioEngine";
+import { getNoteByWestern } from "@/lib/noteSystem";
 import * as Tone from "tone";
 
 interface PracticeStageProps {
@@ -24,6 +26,8 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
   const [currentBeat, setCurrentBeat] = useState(0);
   const [sessionTime, setSessionTime] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [targetNote, setTargetNote] = useState<string | null>(null); // null = "All Notes" mode
+  const [targetFrequency, setTargetFrequency] = useState<number | null>(null);
   
   const audioEngineRef = useRef<AudioEngine | null>(null);
   const tanpuraRef = useRef<TanpuraGenerator | null>(null);
@@ -86,6 +90,27 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
       title: `Switched to Raga ${raga}`,
       description: `Pitch detection updated for ${raga} swaras`,
     });
+  };
+
+  const handleNoteSelect = (western: string | null) => {
+    setTargetNote(western);
+    
+    if (western === null) {
+      setTargetFrequency(null);
+      toast({
+        title: "All Notes Mode",
+        description: "Practice all swaras in the raga",
+      });
+    } else {
+      const noteInfo = getNoteByWestern(western);
+      if (noteInfo) {
+        setTargetFrequency(noteInfo.frequency);
+        toast({
+          title: `Target: ${western}`,
+          description: `${noteInfo.swara} • ${noteInfo.frequency.toFixed(1)} Hz`,
+        });
+      }
+    }
   };
 
   // Handle practice start/stop
@@ -219,6 +244,15 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
             </div>
 
             <div>
+              <h3 className="font-semibold mb-4">Target Note</h3>
+              <NoteSelector 
+                selectedNote={targetNote}
+                onSelectNote={handleNoteSelect}
+                currentRaga={selectedRaga}
+              />
+            </div>
+
+            <div>
               <h3 className="font-semibold mb-4">Taal</h3>
               <div className="space-y-2">
                 <Button
@@ -299,6 +333,8 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
                   isActive={isPlaying} 
                   pitchData={pitchData}
                   currentRaga={selectedRaga}
+                  targetNote={targetNote}
+                  targetFrequency={targetFrequency}
                 />
               </div>
 

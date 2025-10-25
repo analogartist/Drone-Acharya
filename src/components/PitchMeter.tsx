@@ -1,26 +1,44 @@
 import { cn } from "@/lib/utils";
 import { PitchResult } from "@/lib/audioEngine";
 import { ragaDefinitions, formatSwaraWithOctave } from "@/lib/ragaSystem";
+import { getCentsFromTarget } from "@/lib/noteSystem";
 
 interface PitchMeterProps {
   isActive: boolean;
   pitchData: PitchResult | null;
   currentRaga: string;
+  targetNote?: string | null;
+  targetFrequency?: number | null;
 }
 
-const PitchMeter = ({ isActive, pitchData, currentRaga }: PitchMeterProps) => {
-  const pitchDeviation = pitchData?.cents || 0;
+const PitchMeter = ({ isActive, pitchData, currentRaga, targetNote, targetFrequency }: PitchMeterProps) => {
+  // In target note mode, calculate deviation from target instead of from raga swara
+  const isTargetMode = targetNote !== null && targetFrequency !== null;
+  
+  const pitchDeviation = isTargetMode && pitchData?.frequency 
+    ? getCentsFromTarget(pitchData.frequency, targetFrequency)
+    : pitchData?.cents || 0;
   
   const getPitchState = (): "perfect" | "close" | "off" | "outOfRaga" => {
     if (!isActive || !pitchData) return "perfect";
     
-    // Check if note is in raga first
-    if (!pitchData.isInRaga) return "outOfRaga";
+    // In target mode, ignore raga validation
+    if (!isTargetMode) {
+      // Check if note is in raga first
+      if (!pitchData.isInRaga) return "outOfRaga";
+    }
     
     const absCents = Math.abs(pitchDeviation);
-    if (absCents < 10) return "perfect";
-    if (absCents < 30) return "close";
-    return "off";
+    // Tighter tolerances for target mode
+    if (isTargetMode) {
+      if (absCents < 10) return "perfect";
+      if (absCents < 20) return "close";
+      return "off";
+    } else {
+      if (absCents < 10) return "perfect";
+      if (absCents < 30) return "close";
+      return "off";
+    }
   };
 
   const pitchState = getPitchState();
@@ -47,6 +65,17 @@ const PitchMeter = ({ isActive, pitchData, currentRaga }: PitchMeterProps) => {
 
   return (
     <div className="space-y-4">
+      {/* Target Note Display */}
+      {isTargetMode && targetNote && (
+        <div className="text-center bg-primary/10 border border-primary/20 rounded-lg p-3">
+          <p className="text-xs text-muted-foreground mb-1">Target Note</p>
+          <p className="text-2xl font-bold text-primary">{targetNote}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {targetFrequency?.toFixed(1)} Hz
+          </p>
+        </div>
+      )}
+
       {/* Pitch Scale */}
       <div className="relative h-32 bg-muted/30 rounded-lg overflow-hidden">
         {/* Center Line */}
@@ -91,9 +120,9 @@ const PitchMeter = ({ isActive, pitchData, currentRaga }: PitchMeterProps) => {
         >
           {isActive
             ? pitchState === "perfect"
-              ? "Perfect Sur! 🎯"
+              ? isTargetMode ? "Perfect! 🎯" : "Perfect Sur! 🎯"
               : pitchState === "close"
-              ? "Almost there..."
+              ? isTargetMode ? `${pitchDeviation > 0 ? '+' : ''}${pitchDeviation.toFixed(0)}¢` : "Almost there..."
               : pitchState === "outOfRaga"
               ? "Not in this raga"
               : "Adjust your pitch"
@@ -103,14 +132,17 @@ const PitchMeter = ({ isActive, pitchData, currentRaga }: PitchMeterProps) => {
           <p className="text-xs text-muted-foreground">
             {formatSwaraWithOctave(pitchData.note, pitchData.octave)} 
             {" • "}
+            {pitchData.frequency.toFixed(1)} Hz
+            {" • "}
             {pitchData.octave === -1 ? "Mandra" : pitchData.octave === 1 ? "Taar" : "Madhya"} Saptak
           </p>
         )}
       </div>
 
-      {/* Swara Reference - Show only swaras in current raga */}
-      <div className="flex justify-center gap-2 text-xs flex-wrap">
-        {ragaDefinitions[currentRaga]?.swaras.map((swara, i) => {
+      {/* Swara Reference - Only show in "All Notes" mode */}
+      {!isTargetMode && (
+        <div className="flex justify-center gap-2 text-xs flex-wrap">
+          {ragaDefinitions[currentRaga]?.swaras.map((swara, i) => {
           const isCurrentSwara = pitchData?.note === swara && isActive && pitchData.octave === 0;
           
           return (
@@ -133,7 +165,8 @@ const PitchMeter = ({ isActive, pitchData, currentRaga }: PitchMeterProps) => {
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
