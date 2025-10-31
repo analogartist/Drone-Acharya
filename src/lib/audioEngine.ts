@@ -122,6 +122,7 @@ export class AudioEngine {
 
       // Filter out invalid frequencies and low quality detections
       if (!frequency) {
+        this.animationFrameId = requestAnimationFrame(detectPitch);
         return;
       }
 
