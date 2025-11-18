@@ -98,7 +98,10 @@ export class AudioEngine {
     }
     
     const detectPitch = () => {
-      if (!this.analyserNode || !this.detector || !this.audioContext) return;
+      if (!this.analyserNode || !this.detector || !this.audioContext) {
+        console.warn('[AudioEngine] detectPitch early exit - missing nodes');
+        return;
+      }
 
       const buffer = new Float32Array(this.analyserNode.fftSize);
       this.analyserNode.getFloatTimeDomainData(buffer);
@@ -190,6 +193,7 @@ export class AudioEngine {
       this.animationFrameId = requestAnimationFrame(detectPitch);
     };
 
+    console.log('[AudioEngine] Starting pitch detection loop');
     detectPitch();
   }
 
