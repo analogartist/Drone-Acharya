@@ -152,7 +152,8 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
           await Tone.start();
           console.log("Tone.js audio context started");
           
-          audioEngineRef.current?.startPitchDetection((result) => {
+          // Start pitch detection (this also resumes AudioEngine's context)
+          await audioEngineRef.current?.startPitchDetection((result) => {
             console.log("Pitch detected in UI:", result);
             setPitchData(result);
           });
