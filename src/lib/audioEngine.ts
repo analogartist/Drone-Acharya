@@ -89,22 +89,36 @@ export class AudioEngine {
     console.log(`[AudioEngine] Swara frequencies:`, this.swaraFrequencies);
   }
 
-  startPitchDetection(callback: (result: PitchResult) => void): void {
+  async startPitchDetection(callback: (result: PitchResult) => void): Promise<void> {
     this.onPitchDetected = callback;
 
     // Ensure audio context is running (required on some browsers)
     if (this.audioContext && this.audioContext.state === 'suspended') {
-      this.audioContext.resume().catch((e) => console.warn('Failed to resume audio context', e));
+      console.log('[AudioEngine] Audio context suspended, resuming...');
+      await this.audioContext.resume();
+      console.log('[AudioEngine] Audio context resumed:', this.audioContext.state);
+    } else {
+      console.log('[AudioEngine] Audio context state:', this.audioContext?.state);
     }
+    
+    let iterationCount = 0;
     
     const detectPitch = () => {
       if (!this.analyserNode || !this.detector || !this.audioContext) {
-        console.warn('[AudioEngine] detectPitch early exit - missing nodes');
+        console.error('[AudioEngine] detectPitch early exit - missing nodes');
         return;
       }
 
       const buffer = new Float32Array(this.analyserNode.fftSize);
       this.analyserNode.getFloatTimeDomainData(buffer);
+      
+      // Debug: Log buffer data for first few iterations
+      if (iterationCount < 5) {
+        const bufferMin = Math.min(...buffer);
+        const bufferMax = Math.max(...buffer);
+        console.log(`[AudioEngine] Buffer iteration ${iterationCount}: min=${bufferMin.toFixed(4)}, max=${bufferMax.toFixed(4)}`);
+        iterationCount++;
+      }
 
       // Calculate audio level (RMS)
       let sum = 0;
