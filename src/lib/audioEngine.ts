@@ -19,6 +19,7 @@ export class AudioEngine {
   private audioContext: AudioContext | null = null;
   private analyserNode: AnalyserNode | null = null;
   private micStream: MediaStream | null = null;
+  private sourceNode: MediaStreamAudioSourceNode | null = null; // Keep reference to prevent garbage collection
   private detector: PitchDetector<Float32Array> | null = null;
   private animationFrameId: number | null = null;
   private onPitchDetected: ((result: PitchResult) => void) | null = null;
@@ -63,8 +64,15 @@ export class AudioEngine {
       this.analyserNode.smoothingTimeConstant = 0.5; // Faster response
 
       // Connect microphone to analyser
-      const source = this.audioContext.createMediaStreamSource(this.micStream);
-      source.connect(this.analyserNode);
+      this.sourceNode = this.audioContext.createMediaStreamSource(this.micStream);
+      this.sourceNode.connect(this.analyserNode);
+
+      // Log microphone track status
+      const audioTracks = this.micStream.getAudioTracks();
+      console.log(`[AudioEngine] Microphone tracks:`, audioTracks.length);
+      audioTracks.forEach((track, i) => {
+        console.log(`[AudioEngine] Track ${i}: enabled=${track.enabled}, muted=${track.muted}, readyState=${track.readyState}`);
+      });
 
       // Initialize pitch detector with relaxed volume threshold
       this.detector = PitchDetector.forFloat32Array(this.analyserNode.fftSize);
@@ -287,6 +295,11 @@ export class AudioEngine {
   cleanup(): void {
     this.stopPitchDetection();
     
+    if (this.sourceNode) {
+      this.sourceNode.disconnect();
+      this.sourceNode = null;
+    }
+
     if (this.micStream) {
       this.micStream.getTracks().forEach(track => track.stop());
       this.micStream = null;
