@@ -25,6 +25,7 @@ export class AudioEngine {
   private onPitchDetected: ((result: PitchResult) => void) | null = null;
   private currentAudioLevel: number = 0;
   private debugMode: boolean = true; // Enable debug logging
+  private initialized: boolean = false;
 
   // Constants for valid vocal frequency range
   private readonly MIN_VOCAL_FREQUENCY = 60; // Hz (below C2)
@@ -81,11 +82,35 @@ export class AudioEngine {
       // Initialize with default raga
       this.setRaga("Yaman");
 
-      console.log("Audio engine initialized successfully");
+      this.initialized = true;
+      console.log("[AudioEngine] Initialized successfully");
     } catch (error) {
-      console.error("Failed to initialize audio engine:", error);
+      this.initialized = false;
+      console.error("[AudioEngine] Failed to initialize:", error);
       throw new Error("Microphone access denied or unavailable");
     }
+  }
+  
+  isReady(): boolean {
+    const ready = this.initialized && 
+           this.audioContext !== null && 
+           this.analyserNode !== null && 
+           this.sourceNode !== null &&
+           this.detector !== null &&
+           this.micStream !== null;
+    
+    if (!ready) {
+      console.error('[AudioEngine] Not ready:', {
+        initialized: this.initialized,
+        hasContext: !!this.audioContext,
+        hasAnalyser: !!this.analyserNode,
+        hasSource: !!this.sourceNode,
+        hasDetector: !!this.detector,
+        hasStream: !!this.micStream
+      });
+    }
+    
+    return ready;
   }
 
   setRaga(ragaName: string): void {
@@ -98,15 +123,24 @@ export class AudioEngine {
   }
 
   async startPitchDetection(callback: (result: PitchResult) => void): Promise<void> {
+    // Validate all required components exist
+    if (!this.isReady()) {
+      throw new Error('AudioEngine not properly initialized. Call initialize() first.');
+    }
+    
+    if (!this.audioContext || !this.analyserNode || !this.detector) {
+      throw new Error('Audio nodes are null. Engine may have been cleaned up.');
+    }
+    
     this.onPitchDetected = callback;
 
     // Ensure audio context is running (required on some browsers)
-    if (this.audioContext && this.audioContext.state === 'suspended') {
+    if (this.audioContext.state === 'suspended') {
       console.log('[AudioEngine] Audio context suspended, resuming...');
       await this.audioContext.resume();
       console.log('[AudioEngine] Audio context resumed:', this.audioContext.state);
     } else {
-      console.log('[AudioEngine] Audio context state:', this.audioContext?.state);
+      console.log('[AudioEngine] Audio context state:', this.audioContext.state);
     }
     
     let iterationCount = 0;
@@ -293,7 +327,9 @@ export class AudioEngine {
   }
 
   cleanup(): void {
+    console.log('[AudioEngine] Cleanup started');
     this.stopPitchDetection();
+    this.initialized = false;
     
     if (this.sourceNode) {
       this.sourceNode.disconnect();
@@ -309,8 +345,12 @@ export class AudioEngine {
       this.audioContext.close();
       this.audioContext = null;
     }
+    
+    this.analyserNode = null;
+    this.detector = null;
+    this.onPitchDetected = null;
 
-    console.log("Audio engine cleaned up");
+    console.log("[AudioEngine] Cleanup complete");
   }
 }
 

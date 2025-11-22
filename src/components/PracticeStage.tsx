@@ -35,15 +35,36 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
   const beatIntervalRef = useRef<number | null>(null);
   const sessionTimerRef = useRef<number | null>(null);
   const audioLevelAnimationRef = useRef<number | null>(null);
+  const isMountedRef = useRef(true);
 
   // Initialize audio engines
   useEffect(() => {
+    isMountedRef.current = true;
+    console.log('[PracticeStage] Starting audio initialization...');
+    
     const initAudio = async () => {
       try {
-      audioEngineRef.current = new AudioEngine();
-      await audioEngineRef.current.initialize();
-      // Set initial raga
-      audioEngineRef.current.setRaga(selectedRaga);
+        // Clean up any existing instances first
+        if (audioEngineRef.current) {
+          console.log('[PracticeStage] Cleaning up old engine...');
+          audioEngineRef.current.cleanup();
+          audioEngineRef.current = null;
+        }
+        
+        setIsInitialized(false);
+        
+        // Create new instances
+        audioEngineRef.current = new AudioEngine();
+        await audioEngineRef.current.initialize();
+        
+        // Don't proceed if component unmounted during init
+        if (!isMountedRef.current) {
+          console.log('[PracticeStage] Component unmounted during init, aborting');
+          audioEngineRef.current?.cleanup();
+          return;
+        }
+        
+        audioEngineRef.current.setRaga(selectedRaga);
         
         tanpuraRef.current = new TanpuraGenerator();
         await tanpuraRef.current.initialize();
@@ -52,13 +73,15 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
         await tablaRef.current.initialize();
         
         setIsInitialized(true);
+        console.log('[PracticeStage] Audio initialization complete');
         
         toast({
           title: "Ready to practice",
           description: "Microphone connected successfully",
         });
       } catch (error) {
-        console.error("Failed to initialize audio:", error);
+        console.error("[PracticeStage] Failed to initialize audio:", error);
+        setIsInitialized(false);
         toast({
           title: "Audio Error",
           description: error instanceof Error ? error.message : "Failed to access microphone",
@@ -70,11 +93,34 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
     initAudio();
 
     return () => {
-      audioEngineRef.current?.cleanup();
-      tanpuraRef.current?.cleanup();
-      tablaRef.current?.cleanup();
-      if (beatIntervalRef.current) clearInterval(beatIntervalRef.current);
-      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+      console.log('[PracticeStage] Cleanup triggered');
+      isMountedRef.current = false;
+      setIsInitialized(false);
+      
+      if (audioEngineRef.current) {
+        audioEngineRef.current.cleanup();
+        audioEngineRef.current = null;
+      }
+      if (tanpuraRef.current) {
+        tanpuraRef.current.cleanup();
+        tanpuraRef.current = null;
+      }
+      if (tablaRef.current) {
+        tablaRef.current.cleanup();
+        tablaRef.current = null;
+      }
+      if (beatIntervalRef.current) {
+        clearInterval(beatIntervalRef.current);
+        beatIntervalRef.current = null;
+      }
+      if (sessionTimerRef.current) {
+        clearInterval(sessionTimerRef.current);
+        sessionTimerRef.current = null;
+      }
+      if (audioLevelAnimationRef.current) {
+        cancelAnimationFrame(audioLevelAnimationRef.current);
+        audioLevelAnimationRef.current = null;
+      }
     };
   }, [selectedRaga]);
 
@@ -115,10 +161,22 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
 
   // Handle practice start/stop
   const togglePractice = () => {
-    if (!isInitialized) {
+    // Validate audio engine is ready
+    if (!isInitialized || !audioEngineRef.current) {
+      console.error('[PracticeStage] Cannot start - not initialized or engine is null');
       toast({
         title: "Not Ready",
-        description: "Audio system is still initializing",
+        description: "Audio system is still initializing. Please wait.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!audioEngineRef.current.isReady()) {
+      console.error('[PracticeStage] Audio engine not ready');
+      toast({
+        title: "Audio Engine Error",
+        description: "Audio engine is not properly initialized. Try refreshing the page.",
         variant: "destructive",
       });
       return;
@@ -148,13 +206,18 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
       // Start practice - ensure Tone.js is started first
       const startPractice = async () => {
         try {
+          if (!audioEngineRef.current) {
+            throw new Error('Audio engine reference lost');
+          }
+          
           // Ensure Tone.js audio context is running
           await Tone.start();
-          console.log("Tone.js audio context started");
+          console.log("[PracticeStage] Tone.js audio context started");
           
           // Start pitch detection (this also resumes AudioEngine's context)
-          await audioEngineRef.current?.startPitchDetection((result) => {
-            console.log("Pitch detected in UI:", result);
+          console.log('[PracticeStage] Starting pitch detection...');
+          await audioEngineRef.current.startPitchDetection((result) => {
+            console.log("[PracticeStage] Pitch detected:", result);
             setPitchData(result);
           });
           
