@@ -1,15 +1,17 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Play, Pause, Settings } from "lucide-react";
+import { ArrowLeft, Play, Pause, Settings, RotateCcw } from "lucide-react";
 import PitchMeter from "@/components/PitchMeter";
 import BeatIndicator from "@/components/BeatIndicator";
 import RagaSelector from "@/components/RagaSelector";
 import NoteSelector from "@/components/NoteSelector";
 import AudioLevelMeter from "@/components/AudioLevelMeter";
+import PaltaDisplay from "@/components/PaltaDisplay";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { AudioEngine, TanpuraGenerator, TablaGenerator, PitchResult } from "@/lib/audioEngine";
 import { getNoteByWestern } from "@/lib/noteSystem";
+import { getRagaPaltas, PaltaTracker, PaltaDefinition, PaltaComparison } from "@/lib/paltaSystem";
 import * as Tone from "tone";
 
 interface PracticeStageProps {
@@ -28,8 +30,15 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
   const [audioLevel, setAudioLevel] = useState(0);
   const [targetNote, setTargetNote] = useState<string | null>(null); // null = "All Notes" mode
   const [targetFrequency, setTargetFrequency] = useState<number | null>(null);
-  
+  const [availablePaltas, setAvailablePaltas] = useState<PaltaDefinition[]>([]);
+  const [selectedPaltaIndex, setSelectedPaltaIndex] = useState(0);
+  const [paltaComparison, setPaltaComparison] = useState<PaltaComparison>({
+    expectedIndex: 0, sungNotes: [], matches: [], isComplete: false, accuracy: 0,
+  });
+  const [currentHeldSwara, setCurrentHeldSwara] = useState<string | null>(null);
+
   const audioEngineRef = useRef<AudioEngine | null>(null);
+  const paltaTrackerRef = useRef<PaltaTracker>(new PaltaTracker());
   const tanpuraRef = useRef<TanpuraGenerator | null>(null);
   const tablaRef = useRef<TablaGenerator | null>(null);
   const beatIntervalRef = useRef<number | null>(null);
@@ -124,14 +133,45 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
     };
   }, [selectedRaga]);
 
+  // Initialize paltas when raga changes
+  useEffect(() => {
+    const paltas = getRagaPaltas(selectedRaga);
+    setAvailablePaltas(paltas);
+    setSelectedPaltaIndex(0);
+    if (paltas.length > 0) {
+      paltaTrackerRef.current.setPalta(paltas[0]);
+    }
+    setPaltaComparison({
+      expectedIndex: 0, sungNotes: [], matches: [], isComplete: false, accuracy: 0,
+    });
+  }, [selectedRaga]);
+
+  const handlePaltaSelect = useCallback((index: number) => {
+    setSelectedPaltaIndex(index);
+    const palta = availablePaltas[index];
+    if (palta) {
+      paltaTrackerRef.current.setPalta(palta);
+      setPaltaComparison({
+        expectedIndex: 0, sungNotes: [], matches: [], isComplete: false, accuracy: 0,
+      });
+    }
+  }, [availablePaltas]);
+
+  const handlePaltaReset = useCallback(() => {
+    paltaTrackerRef.current.reset();
+    setPaltaComparison({
+      expectedIndex: 0, sungNotes: [], matches: [], isComplete: false, accuracy: 0,
+    });
+  }, []);
+
   const handleRagaChange = (raga: string) => {
     setSelectedRaga(raga);
-    
+
     // Update audio engine with new raga
     if (audioEngineRef.current) {
       audioEngineRef.current.setRaga(raga);
     }
-    
+
     toast({
       title: `Switched to Raga ${raga}`,
       description: `Pitch detection updated for ${raga} swaras`,
@@ -219,13 +259,25 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
           await audioEngineRef.current.startPitchDetection((result) => {
             console.log("[PracticeStage] Pitch detected:", result);
             setPitchData(result);
+
+            // Feed detected note into palta tracker
+            paltaTrackerRef.current.update(result.note, result.octave);
+            const held = paltaTrackerRef.current.getCurrentHeldNote();
+            setCurrentHeldSwara(held?.swara ?? null);
+            setPaltaComparison(paltaTrackerRef.current.getComparison());
           });
           
-          // Update audio level continuously
+          // Update audio level continuously and feed silence to palta tracker
           const updateAudioLevel = () => {
             if (audioEngineRef.current && audioLevelAnimationRef.current !== null) {
               const level = audioEngineRef.current.getAudioLevel();
               setAudioLevel(level);
+              // If audio level is below threshold, signal silence to palta tracker
+              if (level < 0.02) {
+                paltaTrackerRef.current.update(null, null);
+                setPaltaComparison(paltaTrackerRef.current.getComparison());
+                setCurrentHeldSwara(null);
+              }
               audioLevelAnimationRef.current = requestAnimationFrame(updateAudioLevel);
             }
           };
@@ -317,6 +369,33 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
             </div>
 
             <div>
+              <h3 className="font-semibold mb-4">Palta</h3>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {availablePaltas.map((palta, i) => (
+                  <Button
+                    key={i}
+                    variant={selectedPaltaIndex === i ? "default" : "outline"}
+                    className="w-full justify-start text-xs"
+                    onClick={() => handlePaltaSelect(i)}
+                  >
+                    {palta.name}
+                  </Button>
+                ))}
+              </div>
+              {isPlaying && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full mt-2"
+                  onClick={handlePaltaReset}
+                >
+                  <RotateCcw className="mr-2 w-3 h-3" />
+                  Reset Palta
+                </Button>
+              )}
+            </div>
+
+            <div>
               <h3 className="font-semibold mb-4">Taal</h3>
               <div className="space-y-2">
                 <Button
@@ -399,6 +478,16 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
                   currentRaga={selectedRaga}
                   targetNote={targetNote}
                   targetFrequency={targetFrequency}
+                />
+              </div>
+
+              <div>
+                <h3 className="font-semibold mb-4 text-center">Palta Practice</h3>
+                <PaltaDisplay
+                  palta={availablePaltas[selectedPaltaIndex] || null}
+                  comparison={paltaComparison}
+                  currentHeldSwara={currentHeldSwara}
+                  isActive={isPlaying}
                 />
               </div>
 
