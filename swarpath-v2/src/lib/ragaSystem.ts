@@ -32,7 +32,7 @@ export const chromaticSwaras = [
   { name: 'Ni', ratio: swaraRatios.Ni },
 ];
 
-// Western note names for each Sa position (C through B)
+// Western note names for each Sa position (C through B) — single octave for legacy
 export const saOptions = [
   { label: 'C',  hz: 261.63 },
   { label: 'C#', hz: 277.18 },
@@ -46,6 +46,43 @@ export const saOptions = [
   { label: 'A',  hz: 440.00 },
   { label: 'A#', hz: 466.16 },
   { label: 'B',  hz: 493.88 },
+];
+
+// Piano keyboard keys from G3 to E5
+export interface PianoKey {
+  note: string;   // e.g. "C4", "F#3"
+  label: string;  // e.g. "C", "F#"
+  octave: number;
+  hz: number;
+  isBlack: boolean;
+}
+
+export const pianoKeys: PianoKey[] = [
+  // Octave 3 (partial: G3–B3)
+  { note: 'G3',  label: 'G',  octave: 3, hz: 196.00, isBlack: false },
+  { note: 'G#3', label: 'G#', octave: 3, hz: 207.65, isBlack: true },
+  { note: 'A3',  label: 'A',  octave: 3, hz: 220.00, isBlack: false },
+  { note: 'A#3', label: 'A#', octave: 3, hz: 233.08, isBlack: true },
+  { note: 'B3',  label: 'B',  octave: 3, hz: 246.94, isBlack: false },
+  // Octave 4 (full)
+  { note: 'C4',  label: 'C',  octave: 4, hz: 261.63, isBlack: false },
+  { note: 'C#4', label: 'C#', octave: 4, hz: 277.18, isBlack: true },
+  { note: 'D4',  label: 'D',  octave: 4, hz: 293.66, isBlack: false },
+  { note: 'D#4', label: 'D#', octave: 4, hz: 311.13, isBlack: true },
+  { note: 'E4',  label: 'E',  octave: 4, hz: 329.63, isBlack: false },
+  { note: 'F4',  label: 'F',  octave: 4, hz: 349.23, isBlack: false },
+  { note: 'F#4', label: 'F#', octave: 4, hz: 369.99, isBlack: true },
+  { note: 'G4',  label: 'G',  octave: 4, hz: 392.00, isBlack: false },
+  { note: 'G#4', label: 'G#', octave: 4, hz: 415.30, isBlack: true },
+  { note: 'A4',  label: 'A',  octave: 4, hz: 440.00, isBlack: false },
+  { note: 'A#4', label: 'A#', octave: 4, hz: 466.16, isBlack: true },
+  { note: 'B4',  label: 'B',  octave: 4, hz: 493.88, isBlack: false },
+  // Octave 5 (partial: C5–E5)
+  { note: 'C5',  label: 'C',  octave: 5, hz: 523.25, isBlack: false },
+  { note: 'C#5', label: 'C#', octave: 5, hz: 554.37, isBlack: true },
+  { note: 'D5',  label: 'D',  octave: 5, hz: 587.33, isBlack: false },
+  { note: 'D#5', label: 'D#', octave: 5, hz: 622.25, isBlack: true },
+  { note: 'E5',  label: 'E',  octave: 5, hz: 659.26, isBlack: false },
 ];
 
 export interface RagaDefinition {

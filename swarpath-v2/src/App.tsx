@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import SaSelector from '@/components/SaSelector';
+import PianoKeyboard from '@/components/PianoKeyboard';
 import RagaPicker from '@/components/RagaPicker';
 import PaltaInput from '@/components/PaltaInput';
 import TempoControls from '@/components/TempoControls';
@@ -164,7 +164,7 @@ export default function App() {
         {/* Settings panel (collapsible) */}
         {showSettings && (
           <div className="settings-grid">
-            <div className="card"><SaSelector value={saHz} onChange={setSaHz} /></div>
+            <div className="card" style={{ gridColumn: '1 / -1' }}><PianoKeyboard value={saHz} onChange={setSaHz} /></div>
             <div className="card"><RagaPicker value={raga} onChange={setRaga} /></div>
             <div className="card"><PaltaInput value={palta} onChange={setPalta} currentRaga={raga} /></div>
             <div className="card">
