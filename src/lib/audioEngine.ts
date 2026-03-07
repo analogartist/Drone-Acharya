@@ -50,7 +50,7 @@ export class AudioEngine {
       // Request microphone access
       this.micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: false,
+          echoCancellation: true,
           noiseSuppression: false,
           autoGainControl: false,
         },
