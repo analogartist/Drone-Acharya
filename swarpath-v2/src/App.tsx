@@ -69,7 +69,7 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => { engineRef.current?.setSa(saHz); tanpuraRef.current?.setSa(saHz); }, [saHz]);
+  useEffect(() => { engineRef.current?.setSa(saHz); void tanpuraRef.current?.setSa(saHz); }, [saHz]);
   useEffect(() => { engineRef.current?.setRaga(raga); }, [raga]);
   useEffect(() => { if (metronomeRef.current) metronomeRef.current.enabled = metronomeOn; }, [metronomeOn]);
   useEffect(() => { const r = ragaDefinitions[raga]; if (r) setPalta([...r.aroha, ...r.avaroha.slice(1)]); }, [raga]);
@@ -86,7 +86,7 @@ export default function App() {
     if (palta.length === 0) { alert('Set a palta first'); return; }
     setFeedback(palta.map((s) => ({ swara: s, status: 'pending' })));
     setCurrentBeat(0);
-    tanpuraRef.current?.start(saHz);
+    await tanpuraRef.current?.start(saHz);
     await engineRef.current?.startDetection((result) => { if (mountedRef.current) setPitchData(result); });
     const pollLevel = () => { if (!mountedRef.current) return; setAudioLevel(engineRef.current?.audioLevel ?? 0); levelRafRef.current = requestAnimationFrame(pollLevel); };
     levelRafRef.current = requestAnimationFrame(pollLevel);
