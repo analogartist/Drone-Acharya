@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { AudioEngine, TanpuraGenerator, TablaGenerator, PitchResult } from "@/lib/audioEngine";
 import { getNoteByWestern } from "@/lib/noteSystem";
-import { getRagaPaltas, PaltaTracker, PaltaDefinition, PaltaComparison } from "@/lib/paltaSystem";
+import { getRagaPaltas, PaltaTracker, PaltaDefinition, PaltaComparison, PracticeMode } from "@/lib/paltaSystem";
 import * as Tone from "tone";
 
 interface PracticeStageProps {
@@ -36,6 +36,7 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
     expectedIndex: 0, sungNotes: [], matches: [], isComplete: false, accuracy: 0,
   });
   const [currentHeldSwara, setCurrentHeldSwara] = useState<string | null>(null);
+  const [practiceMode, setPracticeMode] = useState<PracticeMode>("sequence");
 
   const audioEngineRef = useRef<AudioEngine | null>(null);
   const paltaTrackerRef = useRef<PaltaTracker>(new PaltaTracker());
@@ -267,14 +268,20 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
             setPaltaComparison(paltaTrackerRef.current.getComparison());
           });
           
-          // Update audio level continuously and feed silence to palta tracker
+          // Configure palta tracker for current mode and tempo
+          paltaTrackerRef.current.setMode(practiceMode);
+          if (practiceMode === "taal") {
+            paltaTrackerRef.current.configure({ bpm: 80, notesPerBeat: 1 });
+          }
+
+          // Update audio level continuously; let tracker handle silence via timeout
           const updateAudioLevel = () => {
             if (audioEngineRef.current && audioLevelAnimationRef.current !== null) {
               const level = audioEngineRef.current.getAudioLevel();
               setAudioLevel(level);
-              // If audio level is below threshold, signal silence to palta tracker
-              if (level < 0.02) {
-                paltaTrackerRef.current.update(null, null);
+              // Let the tracker check its own silence timeout
+              const didFinalize = paltaTrackerRef.current.checkSilenceTimeout();
+              if (didFinalize) {
                 setPaltaComparison(paltaTrackerRef.current.getComparison());
                 setCurrentHeldSwara(null);
               }
@@ -285,20 +292,22 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
           
           tanpuraRef.current?.start(130.81); // Sa = C3 (base frequency)
           console.log("Tanpura started");
-          
-          // Start tabla beats
-          const totalBeats = selectedTaal === "Teentaal" ? 16 : 6;
-          const bpm = 80; // Beats per minute
-          const beatInterval = (60 / bpm) * 1000;
-          
-          let beat = 0;
-          beatIntervalRef.current = window.setInterval(() => {
-            const isSam = beat === 0;
-            tablaRef.current?.playBeat(isSam);
-            console.log(`Tabla beat ${beat}${isSam ? ' (Sam)' : ''}`);
-            setCurrentBeat(beat);
-            beat = (beat + 1) % totalBeats;
-          }, beatInterval);
+
+          // Start tabla beats only in taal mode
+          if (practiceMode === "taal") {
+            const totalBeats = selectedTaal === "Teentaal" ? 16 : 6;
+            const bpm = 80; // Beats per minute
+            const beatInterval = (60 / bpm) * 1000;
+
+            let beat = 0;
+            beatIntervalRef.current = window.setInterval(() => {
+              const isSam = beat === 0;
+              tablaRef.current?.playBeat(isSam);
+              console.log(`Tabla beat ${beat}${isSam ? ' (Sam)' : ''}`);
+              setCurrentBeat(beat);
+              beat = (beat + 1) % totalBeats;
+            }, beatInterval);
+          }
 
           // Start session timer
           sessionTimerRef.current = window.setInterval(() => {
@@ -340,7 +349,9 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
           
           <div className="text-center">
             <h2 className="font-semibold text-lg">{selectedRaga}</h2>
-            <p className="text-sm text-muted-foreground">{selectedTaal}</p>
+            <p className="text-sm text-muted-foreground">
+              {practiceMode === "sequence" ? "Sequence Practice" : selectedTaal}
+            </p>
           </div>
 
           <Button variant="ghost" size="icon">
@@ -354,6 +365,33 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left Panel - Controls */}
           <Card className="lg:col-span-1 p-6 space-y-6 shadow-soft">
+            <div>
+              <h3 className="font-semibold mb-4">Practice Mode</h3>
+              <div className="flex gap-2">
+                <Button
+                  variant={practiceMode === "sequence" ? "default" : "outline"}
+                  className="flex-1 text-xs"
+                  onClick={() => { setPracticeMode("sequence"); paltaTrackerRef.current.setMode("sequence"); }}
+                  disabled={isPlaying}
+                >
+                  Sequence
+                </Button>
+                <Button
+                  variant={practiceMode === "taal" ? "default" : "outline"}
+                  className="flex-1 text-xs"
+                  onClick={() => { setPracticeMode("taal"); paltaTrackerRef.current.setMode("taal"); }}
+                  disabled={isPlaying}
+                >
+                  Taal
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {practiceMode === "sequence"
+                  ? "Sing the correct notes in order, at your own pace"
+                  : "Sing the correct notes on the correct beats"}
+              </p>
+            </div>
+
             <div>
               <h3 className="font-semibold mb-4">Raga Selection</h3>
               <RagaSelector value={selectedRaga} onChange={handleRagaChange} />
@@ -395,25 +433,27 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
               )}
             </div>
 
-            <div>
-              <h3 className="font-semibold mb-4">Taal</h3>
-              <div className="space-y-2">
-                <Button
-                  variant={selectedTaal === "Teentaal" ? "default" : "outline"}
-                  className="w-full justify-start"
-                  onClick={() => setSelectedTaal("Teentaal")}
-                >
-                  Teentaal (16 beats)
-                </Button>
-                <Button
-                  variant={selectedTaal === "Dadra" ? "default" : "outline"}
-                  className="w-full justify-start"
-                  onClick={() => setSelectedTaal("Dadra")}
-                >
-                  Dadra (6 beats)
-                </Button>
+            {practiceMode === "taal" && (
+              <div>
+                <h3 className="font-semibold mb-4">Taal</h3>
+                <div className="space-y-2">
+                  <Button
+                    variant={selectedTaal === "Teentaal" ? "default" : "outline"}
+                    className="w-full justify-start"
+                    onClick={() => setSelectedTaal("Teentaal")}
+                  >
+                    Teentaal (16 beats)
+                  </Button>
+                  <Button
+                    variant={selectedTaal === "Dadra" ? "default" : "outline"}
+                    className="w-full justify-start"
+                    onClick={() => setSelectedTaal("Dadra")}
+                  >
+                    Dadra (6 beats)
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="pt-4">
               <Button
@@ -491,14 +531,16 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
                 />
               </div>
 
-              <div>
-                <h3 className="font-semibold mb-4 text-center">Beat (Taal) Alignment</h3>
-                <BeatIndicator 
-                  isActive={isPlaying} 
-                  totalBeats={selectedTaal === "Teentaal" ? 16 : 6}
-                  currentBeat={currentBeat}
-                />
-              </div>
+              {practiceMode === "taal" && (
+                <div>
+                  <h3 className="font-semibold mb-4 text-center">Beat (Taal) Alignment</h3>
+                  <BeatIndicator
+                    isActive={isPlaying}
+                    totalBeats={selectedTaal === "Teentaal" ? 16 : 6}
+                    currentBeat={currentBeat}
+                  />
+                </div>
+              )}
 
               {!isPlaying && (
                 <div className="text-center py-8 text-muted-foreground">

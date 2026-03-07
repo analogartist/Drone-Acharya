@@ -80,19 +80,43 @@ const PaltaDisplay = ({ palta, comparison, currentHeldSwara, isActive }: PaltaDi
       {isComplete && (
         <div
           className={cn(
-            "text-center py-2 rounded-md text-sm font-medium",
+            "text-center py-4 rounded-md space-y-2",
             accuracy >= 80
-              ? "bg-success/10 text-success"
+              ? "bg-success/10"
               : accuracy >= 50
-              ? "bg-warning/10 text-warning"
-              : "bg-destructive/10 text-destructive"
+              ? "bg-warning/10"
+              : "bg-destructive/10"
           )}
         >
-          {accuracy >= 80
-            ? "Excellent! Palta completed accurately"
-            : accuracy >= 50
-            ? "Good attempt - try to match each swara more precisely"
-            : "Keep practicing - focus on singing the correct sequence"}
+          <div className={cn(
+            "text-3xl font-bold",
+            accuracy >= 80
+              ? "text-success"
+              : accuracy >= 50
+              ? "text-warning"
+              : "text-destructive"
+          )}>
+            {accuracy.toFixed(0)}%
+          </div>
+          <div
+            className={cn(
+              "text-sm font-medium",
+              accuracy >= 80
+                ? "text-success"
+                : accuracy >= 50
+                ? "text-warning"
+                : "text-destructive"
+            )}
+          >
+            {accuracy >= 80
+              ? "Excellent! Palta completed accurately"
+              : accuracy >= 50
+              ? "Good attempt - try to match each swara more precisely"
+              : "Keep practicing - focus on singing the correct sequence"}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">
+            Click Reset to try again
+          </div>
         </div>
       )}
     </div>

@@ -1,6 +1,8 @@
 // Palta System - tracks sung note sequences and compares against expected patterns
 import { ragaDefinitions } from "./ragaSystem";
 
+export type PracticeMode = "sequence" | "taal";
+
 export interface PaltaDefinition {
   name: string;
   sequence: string[]; // Expected sequence of swaras (e.g., ["Sa", "Re", "Ga", "Ma", "Pa"])
@@ -19,6 +21,12 @@ export interface PaltaComparison {
   matches: boolean[]; // per-note: did the sung note match the expected?
   isComplete: boolean;
   accuracy: number; // 0-100%
+}
+
+export interface PaltaTrackerConfig {
+  bpm: number;
+  notesPerBeat: number;
+  thresholdFactor?: number; // default 0.3
 }
 
 // Generate paltas from raga definitions
@@ -48,7 +56,7 @@ export function getRagaPaltas(ragaName: string): PaltaDefinition[] {
       const triplet = raga.swaras.slice(i, i + 3);
       paltas.push({
         name: `${triplet.join("-")}`,
-        sequence: [...triplet, ...triplet.reverse()],
+        sequence: [...triplet, ...[...triplet].reverse()],
       });
     }
   }
@@ -56,8 +64,6 @@ export function getRagaPaltas(ragaName: string): PaltaDefinition[] {
   return paltas;
 }
 
-// Minimum duration (ms) to count a note as intentionally sung
-const MIN_NOTE_DURATION = 150;
 // If the same note persists for this long without change, it's one held note
 const SAME_NOTE_MERGE_WINDOW = 80;
 
@@ -66,10 +72,32 @@ export class PaltaTracker {
   private sungNotes: SungNote[] = [];
   private currentNote: { swara: string; octave: number; startTime: number } | null = null;
   private lastUpdateTime: number = 0;
+  private mode: PracticeMode = "sequence";
+
+  // Dynamic timing config
+  private minNoteDuration: number = 150; // fallback default
+  private silenceTimeoutMs: number = 500; // fallback default
 
   setPalta(palta: PaltaDefinition): void {
     this.currentPalta = palta;
     this.reset();
+  }
+
+  setMode(mode: PracticeMode): void {
+    this.mode = mode;
+    this.reset();
+  }
+
+  getMode(): PracticeMode {
+    return this.mode;
+  }
+
+  configure(config: PaltaTrackerConfig): void {
+    const { bpm, notesPerBeat, thresholdFactor = 0.3 } = config;
+    const beatDuration = 60000 / bpm; // ms per beat
+    const noteDuration = beatDuration / notesPerBeat; // ms per note
+    this.minNoteDuration = noteDuration * thresholdFactor;
+    this.silenceTimeoutMs = noteDuration * 2;
   }
 
   reset(): void {
@@ -80,6 +108,13 @@ export class PaltaTracker {
 
   // Called every frame with the detected note (or null if silence)
   update(swara: string | null, octave: number | null): void {
+    if (!this.currentPalta) return;
+
+    // Stop accepting notes once palta is complete
+    if (this.sungNotes.length >= this.currentPalta.sequence.length) {
+      return;
+    }
+
     const now = performance.now();
 
     if (swara === null || octave === null) {
@@ -105,11 +140,37 @@ export class PaltaTracker {
     this.lastUpdateTime = now;
   }
 
+  // Check if the current note should be finalized due to silence timeout
+  // Returns true if a note was finalized
+  checkSilenceTimeout(): boolean {
+    if (!this.currentNote) return false;
+    if (!this.currentPalta) return false;
+    if (this.sungNotes.length >= this.currentPalta.sequence.length) return false;
+
+    const now = performance.now();
+    if (now - this.lastUpdateTime > this.silenceTimeoutMs) {
+      this.finalizeCurrentNote(now);
+      return true;
+    }
+    return false;
+  }
+
   private finalizeCurrentNote(now: number): void {
     if (!this.currentNote) return;
 
+    // Guard against exceeding palta length
+    if (this.currentPalta && this.sungNotes.length >= this.currentPalta.sequence.length) {
+      this.currentNote = null;
+      return;
+    }
+
     const duration = now - this.currentNote.startTime;
-    if (duration >= MIN_NOTE_DURATION) {
+
+    // In sequence mode, accept any clearly detected note (no duration check)
+    // In taal mode, enforce minimum duration
+    const shouldAccept = this.mode === "sequence" || duration >= this.minNoteDuration;
+
+    if (shouldAccept) {
       this.sungNotes.push({
         swara: this.currentNote.swara,
         octave: this.currentNote.octave,
@@ -145,8 +206,7 @@ export class PaltaTracker {
       }
     }
 
-    const totalCompared = Math.min(this.sungNotes.length, expected.length);
-    const accuracy = totalCompared > 0 ? (correctCount / totalCompared) * 100 : 0;
+    const accuracy = expected.length > 0 ? (correctCount / expected.length) * 100 : 0;
     const isComplete = this.sungNotes.length >= expected.length;
 
     return {
