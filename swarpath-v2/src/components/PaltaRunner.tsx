@@ -15,17 +15,27 @@ export interface SwaraFeedback {
 export default function PaltaRunner({ swaras, currentIndex, isPlaying, feedback }: PaltaRunnerProps) {
   if (swaras.length === 0) {
     return (
-      <div className="card text-center py-12 text-[var(--color-text-muted)]">
-        <p className="text-lg">Enter a palta to begin</p>
-        <p className="text-sm mt-1">e.g. Sa Re Ga Ma Pa Ma Ga Re Sa</p>
+      <div className="card text-center py-16">
+        <p className="text-xl text-[var(--color-text-muted)]">Enter a palta to begin</p>
+        <p className="text-sm text-[var(--color-text-muted)] mt-2 opacity-60">
+          Click Settings to configure your practice
+        </p>
       </div>
     );
   }
 
   return (
     <div className="card">
-      <p className="label mb-4">Palta Runner</p>
-      <div className="flex flex-wrap gap-2 justify-center">
+      <div className="flex items-center justify-between mb-4">
+        <p className="label">Palta Runner</p>
+        <div className="flex items-center gap-3 text-[10px] text-[var(--color-text-muted)]">
+          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-[var(--color-success)]" /> Correct</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-[var(--color-warning)]" /> Close</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-[var(--color-danger)]" /> Off</span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 justify-center py-4">
         {swaras.map((swara, i) => {
           const fb = feedback[i] || { status: 'pending' };
           const isCurrent = isPlaying && i === currentIndex;
@@ -34,45 +44,19 @@ export default function PaltaRunner({ swaras, currentIndex, isPlaying, feedback 
             <div
               key={i}
               className={cn(
-                'relative px-4 py-3 rounded-lg font-mono text-lg font-semibold transition-all duration-200 min-w-[3.5rem] text-center',
-                // Background states
-                fb.status === 'correct' && 'bg-[var(--color-success)]/20 text-[var(--color-success)]',
-                fb.status === 'close' && 'bg-[var(--color-warning)]/20 text-[var(--color-warning)]',
-                fb.status === 'wrong' && 'bg-[var(--color-danger)]/20 text-[var(--color-danger)]',
-                fb.status === 'pending' && 'bg-[var(--color-surface-2)] text-[var(--color-text-muted)]',
-                fb.status === 'active' && 'bg-[var(--color-primary)]/20 text-[var(--color-primary)]',
-                // Current highlight
-                isCurrent && 'ring-2 ring-[var(--color-primary)] scale-110',
+                'swara-chip',
+                fb.status === 'correct' && 'swara-chip--correct',
+                fb.status === 'close' && 'swara-chip--close',
+                fb.status === 'wrong' && 'swara-chip--wrong',
+                fb.status === 'pending' && 'swara-chip--pending',
+                fb.status === 'active' && 'swara-chip--active',
+                isCurrent && 'swara-chip--current',
               )}
             >
               {swara}
-              {/* Dot indicator below */}
-              {fb.status !== 'pending' && fb.status !== 'active' && (
-                <div
-                  className={cn(
-                    'absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full',
-                    fb.status === 'correct' && 'bg-[var(--color-success)]',
-                    fb.status === 'close' && 'bg-[var(--color-warning)]',
-                    fb.status === 'wrong' && 'bg-[var(--color-danger)]',
-                  )}
-                />
-              )}
             </div>
           );
         })}
-      </div>
-
-      {/* Legend */}
-      <div className="flex justify-center gap-4 mt-6 text-xs text-[var(--color-text-muted)]">
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-[var(--color-success)]" /> Correct
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-[var(--color-warning)]" /> Close
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-[var(--color-danger)]" /> Off
-        </span>
       </div>
     </div>
   );

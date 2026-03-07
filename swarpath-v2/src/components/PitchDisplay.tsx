@@ -1,10 +1,9 @@
-import { cn } from '@/lib/utils';
 import type { PitchResult } from '@/lib/audioEngine';
 
 interface PitchDisplayProps {
   pitchData: PitchResult | null;
   isActive: boolean;
-  targetSwara: string | null; // current palta swara to hit
+  targetSwara: string | null;
 }
 
 export default function PitchDisplay({ pitchData, isActive, targetSwara }: PitchDisplayProps) {
@@ -19,72 +18,68 @@ export default function PitchDisplay({ pitchData, isActive, targetSwara }: Pitch
 
   const indicatorPos = 50 + Math.max(-50, Math.min(50, cents));
 
-  const colors = {
-    perfect: 'bg-[var(--color-success)]',
-    close: 'bg-[var(--color-warning)]',
-    off: 'bg-[var(--color-danger)]',
-    idle: 'bg-[var(--color-border)]',
+  const statusColors = {
+    perfect: 'var(--color-success)',
+    close: 'var(--color-warning)',
+    off: 'var(--color-danger)',
+    idle: 'var(--color-text-muted)',
   };
 
-  const textColors = {
-    perfect: 'text-[var(--color-success)]',
-    close: 'text-[var(--color-warning)]',
-    off: 'text-[var(--color-danger)]',
-    idle: 'text-[var(--color-text-muted)]',
-  };
+  const color = statusColors[status];
 
   return (
-    <div className="card space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="card">
+      <div className="flex items-center justify-between mb-4">
         <p className="label">Pitch Detection</p>
         {targetSwara && (
-          <span className="text-xs font-mono text-[var(--color-primary)]">
-            Target: {targetSwara}
-          </span>
+          <span className="badge">Target: {targetSwara}</span>
         )}
       </div>
 
-      {/* Detected swara */}
-      <div className="text-center">
-        <p className={cn('text-4xl font-bold font-mono', textColors[status])}>
+      {/* Big swara display */}
+      <div className="text-center py-4">
+        <p className="text-5xl font-bold font-mono" style={{ color }}>
           {pitchData?.note ?? '--'}
         </p>
         {pitchData && (
-          <p className="text-xs text-[var(--color-text-muted)] mt-1 font-mono">
-            {pitchData.frequency.toFixed(1)} Hz &middot; {cents > 0 ? '+' : ''}{cents.toFixed(0)}c
+          <p className="text-xs text-[var(--color-text-muted)] mt-2 font-mono">
+            {pitchData.frequency.toFixed(1)} Hz &middot; {cents > 0 ? '+' : ''}{cents.toFixed(0)} cents
           </p>
         )}
       </div>
 
-      {/* Cents bar */}
-      <div className="relative h-8 bg-[var(--color-surface-2)] rounded-full overflow-hidden">
+      {/* Cents gauge */}
+      <div className="relative h-10 bg-[var(--color-surface-2)] rounded-xl overflow-hidden mt-2">
+        {/* Center zone (good area) */}
+        <div className="absolute left-[40%] right-[40%] top-0 bottom-0 bg-[var(--color-success)]/5 border-x border-[var(--color-success)]/20" />
         {/* Center line */}
-        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-[var(--color-text-muted)]/30" />
+        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-[var(--color-text-muted)]/20" />
         {/* Scale markers */}
-        <div className="absolute inset-0 flex items-center justify-between px-4 text-[10px] text-[var(--color-text-muted)]">
-          <span>-50c</span>
+        <div className="absolute inset-0 flex items-center justify-between px-4 text-[10px] text-[var(--color-text-muted)] opacity-50">
+          <span>-50</span>
           <span>0</span>
-          <span>+50c</span>
+          <span>+50</span>
         </div>
         {/* Indicator */}
         {isActive && (
           <div
-            className={cn(
-              'absolute top-1 bottom-1 w-2 rounded-full transition-all duration-150',
-              colors[status],
-              status === 'perfect' && 'shadow-[0_0_12px_rgba(34,197,94,0.5)]',
-            )}
-            style={{ left: `${indicatorPos}%`, transform: 'translateX(-50%)' }}
+            className="absolute top-1.5 bottom-1.5 w-3 rounded-full transition-all duration-100"
+            style={{
+              left: `${indicatorPos}%`,
+              transform: 'translateX(-50%)',
+              backgroundColor: color,
+              boxShadow: status === 'perfect' ? `0 0 16px ${color}` : 'none',
+            }}
           />
         )}
       </div>
 
-      {/* Status label */}
-      <p className={cn('text-center text-sm font-medium', textColors[status])}>
-        {status === 'perfect' && 'Perfect Sur'}
+      {/* Status */}
+      <p className="text-center text-sm font-medium mt-3" style={{ color }}>
+        {status === 'perfect' && 'Perfect Sur!'}
         {status === 'close' && 'Almost there...'}
         {status === 'off' && 'Adjust your pitch'}
-        {status === 'idle' && 'Waiting...'}
+        {status === 'idle' && (isActive ? 'Listening...' : 'Press Start to begin')}
       </p>
     </div>
   );
