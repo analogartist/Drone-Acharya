@@ -30,14 +30,14 @@ export class AudioEngine {
   // Constants for valid vocal frequency range
   private readonly MIN_VOCAL_FREQUENCY = 60; // Hz (below C2)
   private readonly MAX_VOCAL_FREQUENCY = 1200; // Hz (above D#6)
-  private readonly MIN_CLARITY = 0.7; // Stricter clarity threshold
-  private readonly MIN_AUDIO_LEVEL = 0.005; // 0.5% minimum audio level
+  private readonly MIN_CLARITY = 0.85; // High clarity to reject noise
+  private readonly MIN_AUDIO_LEVEL = 0.02; // 2% minimum audio level - rejects ambient noise
   private readonly FREQUENCY_TOLERANCE = 0.08; // ±8% tolerance for swara matching
-  
+
   // Frequency stability tracking
   private recentFrequencies: number[] = [];
   private readonly STABILITY_WINDOW = 5;
-  private readonly STABILITY_THRESHOLD = 20; // Hz
+  private readonly STABILITY_THRESHOLD = 12; // Hz - tighter stability requirement
 
   // Dynamic swara frequencies based on current raga
   private baseFrequency: number = 130.81; // C3 (tanpura reference)
@@ -50,7 +50,7 @@ export class AudioEngine {
       // Request microphone access
       this.micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: false,
+          echoCancellation: true,
           noiseSuppression: false,
           autoGainControl: false,
         },

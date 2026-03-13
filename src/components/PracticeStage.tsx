@@ -1,15 +1,17 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Play, Pause, Settings } from "lucide-react";
+import { ArrowLeft, Play, Pause, Settings, RotateCcw } from "lucide-react";
 import PitchMeter from "@/components/PitchMeter";
 import BeatIndicator from "@/components/BeatIndicator";
 import RagaSelector from "@/components/RagaSelector";
 import NoteSelector from "@/components/NoteSelector";
 import AudioLevelMeter from "@/components/AudioLevelMeter";
+import PaltaDisplay from "@/components/PaltaDisplay";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { AudioEngine, TanpuraGenerator, TablaGenerator, PitchResult } from "@/lib/audioEngine";
 import { getNoteByWestern } from "@/lib/noteSystem";
+import { getRagaPaltas, PaltaTracker, PaltaDefinition, PaltaComparison, PracticeMode } from "@/lib/paltaSystem";
 import * as Tone from "tone";
 
 interface PracticeStageProps {
@@ -28,8 +30,16 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
   const [audioLevel, setAudioLevel] = useState(0);
   const [targetNote, setTargetNote] = useState<string | null>(null); // null = "All Notes" mode
   const [targetFrequency, setTargetFrequency] = useState<number | null>(null);
-  
+  const [availablePaltas, setAvailablePaltas] = useState<PaltaDefinition[]>([]);
+  const [selectedPaltaIndex, setSelectedPaltaIndex] = useState(0);
+  const [paltaComparison, setPaltaComparison] = useState<PaltaComparison>({
+    expectedIndex: 0, sungNotes: [], matches: [], isComplete: false, accuracy: 0,
+  });
+  const [currentHeldSwara, setCurrentHeldSwara] = useState<string | null>(null);
+  const [practiceMode, setPracticeMode] = useState<PracticeMode>("sequence");
+
   const audioEngineRef = useRef<AudioEngine | null>(null);
+  const paltaTrackerRef = useRef<PaltaTracker>(new PaltaTracker());
   const tanpuraRef = useRef<TanpuraGenerator | null>(null);
   const tablaRef = useRef<TablaGenerator | null>(null);
   const beatIntervalRef = useRef<number | null>(null);
@@ -124,14 +134,45 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
     };
   }, [selectedRaga]);
 
+  // Initialize paltas when raga changes
+  useEffect(() => {
+    const paltas = getRagaPaltas(selectedRaga);
+    setAvailablePaltas(paltas);
+    setSelectedPaltaIndex(0);
+    if (paltas.length > 0) {
+      paltaTrackerRef.current.setPalta(paltas[0]);
+    }
+    setPaltaComparison({
+      expectedIndex: 0, sungNotes: [], matches: [], isComplete: false, accuracy: 0,
+    });
+  }, [selectedRaga]);
+
+  const handlePaltaSelect = useCallback((index: number) => {
+    setSelectedPaltaIndex(index);
+    const palta = availablePaltas[index];
+    if (palta) {
+      paltaTrackerRef.current.setPalta(palta);
+      setPaltaComparison({
+        expectedIndex: 0, sungNotes: [], matches: [], isComplete: false, accuracy: 0,
+      });
+    }
+  }, [availablePaltas]);
+
+  const handlePaltaReset = useCallback(() => {
+    paltaTrackerRef.current.reset();
+    setPaltaComparison({
+      expectedIndex: 0, sungNotes: [], matches: [], isComplete: false, accuracy: 0,
+    });
+  }, []);
+
   const handleRagaChange = (raga: string) => {
     setSelectedRaga(raga);
-    
+
     // Update audio engine with new raga
     if (audioEngineRef.current) {
       audioEngineRef.current.setRaga(raga);
     }
-    
+
     toast({
       title: `Switched to Raga ${raga}`,
       description: `Pitch detection updated for ${raga} swaras`,
@@ -219,13 +260,31 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
           await audioEngineRef.current.startPitchDetection((result) => {
             console.log("[PracticeStage] Pitch detected:", result);
             setPitchData(result);
+
+            // Feed detected note into palta tracker
+            paltaTrackerRef.current.update(result.note, result.octave);
+            const held = paltaTrackerRef.current.getCurrentHeldNote();
+            setCurrentHeldSwara(held?.swara ?? null);
+            setPaltaComparison(paltaTrackerRef.current.getComparison());
           });
           
-          // Update audio level continuously
+          // Configure palta tracker for current mode and tempo
+          paltaTrackerRef.current.setMode(practiceMode);
+          if (practiceMode === "taal") {
+            paltaTrackerRef.current.configure({ bpm: 80, notesPerBeat: 1 });
+          }
+
+          // Update audio level continuously; let tracker handle silence via timeout
           const updateAudioLevel = () => {
             if (audioEngineRef.current && audioLevelAnimationRef.current !== null) {
               const level = audioEngineRef.current.getAudioLevel();
               setAudioLevel(level);
+              // Let the tracker check its own silence timeout
+              const didFinalize = paltaTrackerRef.current.checkSilenceTimeout();
+              if (didFinalize) {
+                setPaltaComparison(paltaTrackerRef.current.getComparison());
+                setCurrentHeldSwara(null);
+              }
               audioLevelAnimationRef.current = requestAnimationFrame(updateAudioLevel);
             }
           };
@@ -233,20 +292,22 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
           
           tanpuraRef.current?.start(130.81); // Sa = C3 (base frequency)
           console.log("Tanpura started");
-          
-          // Start tabla beats
-          const totalBeats = selectedTaal === "Teentaal" ? 16 : 6;
-          const bpm = 80; // Beats per minute
-          const beatInterval = (60 / bpm) * 1000;
-          
-          let beat = 0;
-          beatIntervalRef.current = window.setInterval(() => {
-            const isSam = beat === 0;
-            tablaRef.current?.playBeat(isSam);
-            console.log(`Tabla beat ${beat}${isSam ? ' (Sam)' : ''}`);
-            setCurrentBeat(beat);
-            beat = (beat + 1) % totalBeats;
-          }, beatInterval);
+
+          // Start tabla beats only in taal mode
+          if (practiceMode === "taal") {
+            const totalBeats = selectedTaal === "Teentaal" ? 16 : 6;
+            const bpm = 80; // Beats per minute
+            const beatInterval = (60 / bpm) * 1000;
+
+            let beat = 0;
+            beatIntervalRef.current = window.setInterval(() => {
+              const isSam = beat === 0;
+              tablaRef.current?.playBeat(isSam);
+              console.log(`Tabla beat ${beat}${isSam ? ' (Sam)' : ''}`);
+              setCurrentBeat(beat);
+              beat = (beat + 1) % totalBeats;
+            }, beatInterval);
+          }
 
           // Start session timer
           sessionTimerRef.current = window.setInterval(() => {
@@ -288,7 +349,9 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
           
           <div className="text-center">
             <h2 className="font-semibold text-lg">{selectedRaga}</h2>
-            <p className="text-sm text-muted-foreground">{selectedTaal}</p>
+            <p className="text-sm text-muted-foreground">
+              {practiceMode === "sequence" ? "Sequence Practice" : selectedTaal}
+            </p>
           </div>
 
           <Button variant="ghost" size="icon">
@@ -302,6 +365,33 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left Panel - Controls */}
           <Card className="lg:col-span-1 p-6 space-y-6 shadow-soft">
+            <div>
+              <h3 className="font-semibold mb-4">Practice Mode</h3>
+              <div className="flex gap-2">
+                <Button
+                  variant={practiceMode === "sequence" ? "default" : "outline"}
+                  className="flex-1 text-xs"
+                  onClick={() => { setPracticeMode("sequence"); paltaTrackerRef.current.setMode("sequence"); }}
+                  disabled={isPlaying}
+                >
+                  Sequence
+                </Button>
+                <Button
+                  variant={practiceMode === "taal" ? "default" : "outline"}
+                  className="flex-1 text-xs"
+                  onClick={() => { setPracticeMode("taal"); paltaTrackerRef.current.setMode("taal"); }}
+                  disabled={isPlaying}
+                >
+                  Taal
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {practiceMode === "sequence"
+                  ? "Sing the correct notes in order, at your own pace"
+                  : "Sing the correct notes on the correct beats"}
+              </p>
+            </div>
+
             <div>
               <h3 className="font-semibold mb-4">Raga Selection</h3>
               <RagaSelector value={selectedRaga} onChange={handleRagaChange} />
@@ -317,24 +407,53 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
             </div>
 
             <div>
-              <h3 className="font-semibold mb-4">Taal</h3>
-              <div className="space-y-2">
-                <Button
-                  variant={selectedTaal === "Teentaal" ? "default" : "outline"}
-                  className="w-full justify-start"
-                  onClick={() => setSelectedTaal("Teentaal")}
-                >
-                  Teentaal (16 beats)
-                </Button>
-                <Button
-                  variant={selectedTaal === "Dadra" ? "default" : "outline"}
-                  className="w-full justify-start"
-                  onClick={() => setSelectedTaal("Dadra")}
-                >
-                  Dadra (6 beats)
-                </Button>
+              <h3 className="font-semibold mb-4">Palta</h3>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {availablePaltas.map((palta, i) => (
+                  <Button
+                    key={i}
+                    variant={selectedPaltaIndex === i ? "default" : "outline"}
+                    className="w-full justify-start text-xs"
+                    onClick={() => handlePaltaSelect(i)}
+                  >
+                    {palta.name}
+                  </Button>
+                ))}
               </div>
+              {isPlaying && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full mt-2"
+                  onClick={handlePaltaReset}
+                >
+                  <RotateCcw className="mr-2 w-3 h-3" />
+                  Reset Palta
+                </Button>
+              )}
             </div>
+
+            {practiceMode === "taal" && (
+              <div>
+                <h3 className="font-semibold mb-4">Taal</h3>
+                <div className="space-y-2">
+                  <Button
+                    variant={selectedTaal === "Teentaal" ? "default" : "outline"}
+                    className="w-full justify-start"
+                    onClick={() => setSelectedTaal("Teentaal")}
+                  >
+                    Teentaal (16 beats)
+                  </Button>
+                  <Button
+                    variant={selectedTaal === "Dadra" ? "default" : "outline"}
+                    className="w-full justify-start"
+                    onClick={() => setSelectedTaal("Dadra")}
+                  >
+                    Dadra (6 beats)
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="pt-4">
               <Button
@@ -403,17 +522,29 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
               </div>
 
               <div>
-                <h3 className="font-semibold mb-4 text-center">Beat (Taal) Alignment</h3>
-                <BeatIndicator 
-                  isActive={isPlaying} 
-                  totalBeats={selectedTaal === "Teentaal" ? 16 : 6}
-                  currentBeat={currentBeat}
+                <h3 className="font-semibold mb-4 text-center">Palta Practice</h3>
+                <PaltaDisplay
+                  palta={availablePaltas[selectedPaltaIndex] || null}
+                  comparison={paltaComparison}
+                  currentHeldSwara={currentHeldSwara}
+                  isActive={isPlaying}
                 />
               </div>
 
+              {practiceMode === "taal" && (
+                <div>
+                  <h3 className="font-semibold mb-4 text-center">Beat (Taal) Alignment</h3>
+                  <BeatIndicator
+                    isActive={isPlaying}
+                    totalBeats={selectedTaal === "Teentaal" ? 16 : 6}
+                    currentBeat={currentBeat}
+                  />
+                </div>
+              )}
+
               {!isPlaying && (
                 <div className="text-center py-8 text-muted-foreground">
-                  <p className="text-lg">Click "Start Practice" to begin your riyaaz</p>
+                  <p className="text-lg">Click "Start Practice" to begin your practice</p>
                   <p className="text-sm mt-2">Grant microphone access when prompted</p>
                 </div>
               )}

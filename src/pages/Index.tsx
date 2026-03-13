@@ -18,11 +18,11 @@ const Index = () => {
         <div className="max-w-4xl mx-auto text-center space-y-8">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full text-sm font-medium text-primary mb-4">
             <Zap className="w-4 h-4" />
-            AI-Powered Riyaaz Companion
+            AI-Powered Practice Companion
           </div>
           
           <h1 className="text-5xl md:text-7xl font-bold tracking-tight gradient-morning bg-clip-text text-transparent">
-            SwarPath
+            Drone-Acharya
           </h1>
           
           <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto">
@@ -36,7 +36,7 @@ const Index = () => {
               onClick={() => setShowPractice(true)}
             >
               <Mic className="mr-2 w-5 h-5" />
-              Start Riyaaz
+              Start Practice
             </Button>
             
             <Button 
@@ -75,7 +75,7 @@ const Index = () => {
         <div className="max-w-3xl mx-auto text-center space-y-6">
           <h2 className="text-3xl md:text-4xl font-bold">Practice Like Never Before</h2>
           <p className="text-lg text-muted-foreground">
-            SwarPath runs entirely in your browser with on-device AI models. 
+            Drone-Acharya runs entirely in your browser with on-device AI models.
             No installation, no data upload — just you, your voice, and instant guidance.
           </p>
           
@@ -128,7 +128,7 @@ const Index = () => {
         <div className="max-w-2xl mx-auto text-center space-y-6 p-12 rounded-2xl gradient-radial border">
           <h2 className="text-3xl md:text-4xl font-bold">Ready to Transform Your Practice?</h2>
           <p className="text-lg text-muted-foreground">
-            Join thousands of vocalists using AI to accelerate their riyaaz
+            Join thousands of vocalists using AI to accelerate their practice
           </p>
           <Button 
             size="lg" 
