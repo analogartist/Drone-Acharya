@@ -544,7 +544,7 @@ const PracticeStage = ({ onBack }: PracticeStageProps) => {
 
               {!isPlaying && (
                 <div className="text-center py-8 text-muted-foreground">
-                  <p className="text-lg">Click "Start Practice" to begin your riyaaz</p>
+                  <p className="text-lg">Click "Start Practice" to begin your practice</p>
                   <p className="text-sm mt-2">Grant microphone access when prompted</p>
                 </div>
               )}
